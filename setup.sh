@@ -24,9 +24,12 @@ echo "Instalando dependências do Backend..."
 pip install -r requirements.txt
 
 # 5. Instala os pacotes do frontend
-echo "Instalando dependências do Frontend (Node.js)..."
+echo "Instalando dependências do Frontend..."
 cd frontend
 npm install
 cd ..
+
+# 6. Instala pacote para rodar processos simultâneos
+npm install
 
 echo "Setup concluído com sucesso!"
