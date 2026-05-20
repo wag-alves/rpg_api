@@ -27,19 +27,19 @@ npm create vite@latest frontend -- --template react
 
 ### Terminal 1 — Hero Service
 ```bash
-cd quest-board/hero-service
+cd backend/hero-service
 uvicorn main:app --port 8001 --reload
 ```
 
 ### Terminal 2 — Quest Service
 ```bash
-cd quest-board/quest-service
+cd backend/quest-service
 uvicorn main:app --port 8002 --reload
 ```
 
 ### Terminal 3 — API Gateway
 ```bash
-cd quest-board/gateway
+cd backend/gateway
 uvicorn main:app --port 8000 --reload
 ```
 
