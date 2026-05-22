@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 
-const URL_GATEWAY = "http://localhost:8000";
+const URL_GATEWAY = `${window.location.protocol}//${window.location.hostname.replace("5173","8000")}`;
 const ID_HEROI = "1";
 
 const COR_DIFICULDADE = {
