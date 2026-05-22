@@ -1,77 +1,140 @@
-# ==========================================
-# GERAL / SISTEMA OPERACIONAL
-# ==========================================
+# Node + .NET + Python `.gitignore`
+
+```gitignore
+# ─────────────────────────────────────────────
+# OS
+# ─────────────────────────────────────────────
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
-# ==========================================
-# AMBIENTES DE DESENVOLVIMENTO (IDEs)
-# ==========================================
-.vscode/
-.idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# ==========================================
-# VARIÁVEIS DE AMBIENTE / SEGURANÇA
-# ==========================================
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-*.pem
-secrets.json
-
-# ==========================================
-# PYTHON (Microserviços)
-# ==========================================
-# Ambientes Virtuais
-venv/
-.venv/
-env/
-ENV/
-
-# Arquivos compilados e de cache
-__pycache__/
-*.py[cod]
-*$py.class
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Logs e Banco de dados local (opcional, remova o sqlite3 se precisar commitar o DB inicial)
+# ─────────────────────────────────────────────
+# Logs
+# ─────────────────────────────────────────────
 *.log
-*.sqlite3
-db.sqlite3
-
-# ==========================================
-# FRONTEND (Node.js / React / Vite)
-# ==========================================
-# Dependências
-node_modules/
-.pnp
-.pnp.js
-
-# Diretórios de Build (Vite)
-dist/
-dist-ssr/
-build/
-
-# Logs do NPM/Yarn
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Cache de ferramentas do ecossistema JS
-.eslintcache
-.stylelintcache
+# ─────────────────────────────────────────────
+# Environment Variables
+# ─────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─────────────────────────────────────────────
+# Python
+# ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ─────────────────────────────────────────────
+# Node.js
+# ─────────────────────────────────────────────
+node_modules/
+npm-cache/
+.pnpm-store/
+
+# Build
+dist/
+build/
+.next/
+.nuxt/
+.out/
+coverage/
+
+# Vite
+.vite/
+
+# TypeScript
+*.tsbuildinfo
+
+# ─────────────────────────────────────────────
+# .NET / C#
+# ─────────────────────────────────────────────
+bin/
+obj/
+
+# Rider / VS / VSCode
+.vs/
+.idea/
+.vscode/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# NuGet
+*.nupkg
+packages/
+
+# Publish output
+publish/
+
+# Test Results
+TestResults/
+
+# ─────────────────────────────────────────────
+# Docker
+# ─────────────────────────────────────────────
+docker-compose.override.yml
+
+# ─────────────────────────────────────────────
+# Temporary files
+# ─────────────────────────────────────────────
+tmp/
+temp/
+*.tmp
+*.swp
+
+# ─────────────────────────────────────────────
+# SQLite / Local DBs
+# ─────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ─────────────────────────────────────────────
+# Mac/Linux permissions
+# ─────────────────────────────────────────────
+*.pem
+*.key
+
+# ─────────────────────────────────────────────
+# Generated files
+# ─────────────────────────────────────────────
+*.cache
+.cache/
+
+# ─────────────────────────────────────────────
+# Coverage
+# ─────────────────────────────────────────────
+coverage.xml
+lcov.info
+```
