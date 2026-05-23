@@ -20,11 +20,11 @@ fi
 python -m pip install --upgrade pip
 
 # 4. Instala os requirements de cada microserviço
-echo "Instalando dependências do Backend..."
+echo "[Instalando dependências do Backend...]"
 pip install -r requirements.txt
 
 # 5. Instala os pacotes do frontend
-echo "Instalando dependências do Frontend..."
+echo "[Instalando dependências do Frontend...]"
 cd frontend
 npm install
 cd ..
