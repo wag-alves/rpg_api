@@ -1,5 +1,7 @@
 using System.Runtime.Serialization;
 
+namespace shop_service.DTOs;
+
 [DataContract]
 public class BuyItemRequest
 {
