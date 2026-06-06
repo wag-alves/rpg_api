@@ -26,8 +26,6 @@ builder.Services.AddSingleton<IShopService, ShopService>();
 
 var app = builder.Build();
 
-// 5. Substituímos o "Hello World" pelo endpoint do SOAP!
-// Agora a aplicação responde em "/Service.asmx" com o padrão XML
-app.UseSoapEndpoint<IShopService>("/Service.asmx", new SoapEncoderOptions(), SoapSerializer.DataContractSerializer);
-
+// Adicione o (IEndpointRouteBuilder) antes do app
+((IEndpointRouteBuilder)app).UseSoapEndpoint<IShopService>("/Service.asmx", new SoapEncoderOptions(), SoapSerializer.DataContractSerializer);
 app.Run();
