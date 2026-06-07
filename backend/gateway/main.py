@@ -219,6 +219,22 @@ async def comprar_item(request: Request):
     hero_id = body.get("hero_id")
     item_id = body.get("item_id")
     quantidade = body.get("quantidade", 1)
+    # Try to resolve item price before attempting purchase so we can update hero gold
+    preco_total = None
+    try:
+        root_items = await _soap_request(
+            "ObterItens",
+            f'<ObterItens xmlns="{TEMP_NS}" />',
+        )
+        items_result = await _extrair_resultado_soap(root_items, "ObterItens")
+        preco = 0
+        for item_elem in items_result.findall(f"{{{DC_NS}}}ShopItem"):
+            if int(item_elem.findtext(f"{{{DC_NS}}}Id", "0")) == int(item_id):
+                preco = int(item_elem.findtext(f"{{{DC_NS}}}Preco", "0"))
+                break
+        preco_total = preco * (quantidade if quantidade > 0 else 1)
+    except Exception:
+        preco_total = None
 
     body_xml = (
         f'<ComprarItem xmlns="{TEMP_NS}">'
@@ -231,19 +247,74 @@ async def comprar_item(request: Request):
     )
 
     try:
+        # Ensure hero has enough gold before calling shop service
+        if preco_total is not None:
+            try:
+                async with httpx.AsyncClient() as client:
+                    hero_resp = await client.get(f"{SERVICO_HEROI}/heroes/{hero_id}", timeout=5.0)
+                    if hero_resp.status_code >= 400:
+                        raise HTTPException(status_code=502, detail="Failed to fetch hero info")
+                    hero_json = hero_resp.json()
+                    # hero service responses are plain JSON; when routed via gateway they wrap, but here we call service directly
+                    hero_gold = hero_json.get("gold") or hero_json.get("ouro") or hero_json.get("data", {}).get("gold")
+                    if hero_gold is None:
+                        # try nested structure
+                        hero_gold = hero_json.get("data", {}).get("gold")
+                    try:
+                        hero_gold = int(hero_gold)
+                    except Exception:
+                        hero_gold = None
+
+                    if hero_gold is not None and preco_total is not None and hero_gold < preco_total:
+                        return JSONResponse(status_code=400, content=envelope_hateoas({
+                            "success": False,
+                            "status_code": "SaldoInsuficiente",
+                            "message": f"Saldo insuficiente: precisa de {preco_total}, tem {hero_gold}.",
+                            "hero_id": hero_id,
+                            "preco_total": preco_total,
+                        }, "/api/shop/buy"))
+            except HTTPException:
+                raise
+            except Exception:
+                # If we couldn't verify hero balance, proceed and let downstream handle consistency
+                pass
+
         root = await _soap_request("ComprarItem", body_xml)
         result = await _extrair_resultado_soap(root, "ComprarItem")
+
+        success = (
+            result.findtext(f"{{{DC_NS}}}Success", "false").lower() == "true"
+        )
+        status_code = result.findtext(f"{{{DC_NS}}}StatusCode", "")
+        message = result.findtext(f"{{{DC_NS}}}Message", "")
+
+        # If shop reports success and we know the price, update the hero's gold in hero service
+        hero_update_info = None
+        if success and preco_total is not None:
+            try:
+                # debit the hero's gold by preco_total
+                patch_body = {"quantidade": -preco_total}
+                hero_resp = await encaminhar(
+                    "PATCH",
+                    f"{SERVICO_HEROI}/heroes/{hero_id}/gold",
+                    f"/api/heroes/{hero_id}/gold",
+                    patch_body,
+                )
+                hero_update_info = {"status_code": hero_resp.status_code}
+            except Exception:
+                hero_update_info = {"error": "failed to update hero gold"}
 
         return JSONResponse(
             content=envelope_hateoas(
                 {
-                    "success": result.findtext(f"{{{DC_NS}}}Success", "false").lower()
-                    == "true",
-                    "status_code": result.findtext(f"{{{DC_NS}}}StatusCode", ""),
-                    "message": result.findtext(f"{{{DC_NS}}}Message", ""),
+                    "success": success,
+                    "status_code": status_code,
+                    "message": message,
                     "hero_id": hero_id,
                     "item_id": item_id,
                     "quantidade": quantidade,
+                    "preco_total": preco_total,
+                    "hero_update": hero_update_info,
                 },
                 "/api/shop/buy",
             ),

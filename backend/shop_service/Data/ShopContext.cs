@@ -14,8 +14,6 @@ public class ShopContext
 
     public Dictionary<int, int> CarteiraDosHerois { get; set; } = new()
     {
-        { 1, 999 },
-        { 99, 200 }, 
-        { 55, 10 }   
+        // Wallets removed: hero balances are managed by Hero Service (orchestrated via Gateway)
     };
 }

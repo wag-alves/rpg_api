@@ -195,7 +195,7 @@ export default function App() {
                 />
               </div>
 
-              <div style={styles.gold}>💰 {heroi.ouro} ouro</div>
+              <div style={styles.gold}>💰 {heroi.gold} ouro</div>
 
               {estatisticas && (
                 <div style={styles.statsGrid}>

@@ -70,3 +70,13 @@ class RespostaAdicionarXp(BaseModel):
     subiu_de_nivel: bool
     novo_nivel: Optional[int]
     links: dict
+
+
+class SolicitacaoAlterarGold(BaseModel):
+    quantidade: int
+
+
+class RespostaAlterarGold(BaseModel):
+    id_heroi: str
+    gold: int
+    links: dict

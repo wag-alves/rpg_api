@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from data import heroes
 from schemas import RespostaHeroi, RespostaEstatisticas, SolicitacaoAdicionarXp, RespostaAdicionarXp
+from schemas import SolicitacaoAlterarGold, RespostaAlterarGold
 
 app = FastAPI(title="Hero Service", version="1.0.0")
 
@@ -108,3 +109,21 @@ def raiz():
             "estatisticas": f"{BASE_URL}/heroes/{{hero_id}}/stats",
         },
     }
+
+
+@app.patch("/heroes/{hero_id}/gold", response_model=RespostaAlterarGold)
+def alterar_gold(hero_id: str, body: SolicitacaoAlterarGold):
+    heroi = heroes.get(hero_id)
+    if not heroi:
+        raise HTTPException(status_code=404, detail="Hero not found")
+
+    heroi["ouro"] += body.quantidade
+
+    return RespostaAlterarGold(
+        id_heroi=hero_id,
+        gold=heroi["ouro"],
+        links={
+            "self": f"{BASE_URL}/heroes/{hero_id}/gold",
+            "heroi": f"{BASE_URL}/heroes/{hero_id}",
+        },
+    )

@@ -17,34 +17,25 @@ public class ShopService : IShopService
     
     public BuyItemResponse ComprarItem(BuyItemRequest request)
     {
-        
         if (!_db.ItensDaLoja.ContainsKey(request.ItemId))
         {
             return new BuyItemResponse { Success = false, StatusCode = "ItemNaoEncontrado", Message = "Este item não existe na loja." };
         }
 
-        if (!_db.CarteiraDosHerois.ContainsKey(request.HeroId))
+        if (request.Quantidade <= 0)
         {
-            return new BuyItemResponse { Success = false, StatusCode = "HeroiNaoEncontrado", Message = "Herói não possui registro financeiro." };
+            return new BuyItemResponse { Success = false, StatusCode = "QuantidadeInvalida", Message = "Quantidade inválida." };
         }
 
         var itemDesejado = _db.ItensDaLoja[request.ItemId];
 
-        int precoTotal = itemDesejado.Preco * (request.Quantidade > 0 ? request.Quantidade : 1);
-        int saldoAtual = _db.CarteiraDosHerois[request.HeroId];
-
-        if (saldoAtual < precoTotal)
+        // Note: wallet / hero balance is the responsibility of Hero Service.
+        // The Gateway should verify and debit the hero's gold. Shop only validates item existence and quantity.
+        return new BuyItemResponse
         {
-            return new BuyItemResponse { Success = false, StatusCode = "SaldoInsuficiente", Message = $"Você precisa de {precoTotal} moedas, mas tem apenas {saldoAtual}." };
-        }
-
-        _db.CarteiraDosHerois[request.HeroId] -= precoTotal;
-
-        return new BuyItemResponse 
-        { 
-            Success = true, 
-            StatusCode = "Sucesso", 
-            Message = $"Você comprou {request.Quantidade}x [{itemDesejado.Nome}] ({itemDesejado.Raridade})! Novo saldo: {_db.CarteiraDosHerois[request.HeroId]} moedas." 
+            Success = true,
+            StatusCode = "Sucesso",
+            Message = $"Compra autorizada: {request.Quantidade}x [{itemDesejado.Nome}] ({itemDesejado.Raridade}).",
         };
     }
 
