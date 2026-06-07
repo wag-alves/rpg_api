@@ -47,4 +47,20 @@ public class ShopService : IShopService
             Message = $"Você comprou {request.Quantidade}x [{itemDesejado.Nome}] ({itemDesejado.Raridade})! Novo saldo: {_db.CarteiraDosHerois[request.HeroId]} moedas." 
         };
     }
+
+    public List<ShopItem> ObterItens()
+    {
+        var itens = new List<ShopItem>();
+        foreach (var kvp in _db.ItensDaLoja)
+        {
+            itens.Add(new ShopItem
+            {
+                Id = kvp.Key,
+                Nome = kvp.Value.Nome,
+                Preco = kvp.Value.Preco,
+                Raridade = kvp.Value.Raridade
+            });
+        }
+        return itens;
+    }
 }

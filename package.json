@@ -4,7 +4,7 @@
   "description": "Sistema de mural de missões estilo RPG demonstrando arquitetura de microserviços com FastAPI, API Gateway e HATEOAS.",
   "main": "index.js",
   "scripts": {
-    "start": "concurrently -n \"HERO,QUEST,GATEWAY,FRONT\" -c \"red,green,blue,yellow\" \"cd backend/hero-service && uvicorn main:app --port 8001 --reload\" \"cd backend/quest-service && uvicorn main:app --port 8002 --reload\" \"cd backend/gateway && uvicorn main:app --port 8000 --reload\" \"cd frontend && npm run dev\"",
+    "start": "concurrently -n \"SHOP,HERO,QUEST,GATEWAY,FRONT\" -c \"magenta,red,green,blue,yellow\" \"cd backend/shop_service && /home/diasz/.dotnet/dotnet run\" \"cd backend/hero_service && uvicorn main:app --port 8001 --reload\" \"cd backend/quest_service && uvicorn main:app --port 8002 --reload\" \"cd backend/gateway && uvicorn main:app --port 8000 --reload\" \"cd frontend && npm run dev\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

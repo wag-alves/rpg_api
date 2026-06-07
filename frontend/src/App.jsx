@@ -29,6 +29,11 @@ export default function App() {
   const [carregando, setCarregando] = useState(false);
   const [toast, setToast] = useState(null);
 
+  const [itensLoja, setItensLoja] = useState([]);
+  const [abaAtiva, setAbaAtiva] = useState("missoes");
+  const [quantidades, setQuantidades] = useState({});
+  const [comprando, setComprando] = useState(null);
+
   const adicionarLog = useCallback((method, path, status, payload) => {
     const entry = {
       id: Date.now() + Math.random(),
@@ -74,6 +79,11 @@ export default function App() {
       setHeroi(h);
       setEstatisticas(s);
       setMissoes(q.missoes || []);
+
+      try {
+        const i = await buscarApi("GET", "/api/shop/items");
+        setItensLoja(i.itens || []);
+      } catch (_) {}
     } catch (e) {
       mostrarToast(e.message, "error");
     } finally {
@@ -107,6 +117,24 @@ export default function App() {
       await carregarTudo();
     } catch (e) {
       mostrarToast(e.message, "error");
+    }
+  };
+
+  const comprarItemLoja = async (itemId) => {
+    const qtd = quantidades[itemId] || 1;
+    setComprando(itemId);
+    try {
+      const res = await buscarApi("POST", "/api/shop/buy", {
+        hero_id: parseInt(ID_HEROI),
+        item_id: itemId,
+        quantidade: qtd,
+      });
+      mostrarToast(res.message);
+      await carregarTudo();
+    } catch (e) {
+      mostrarToast(e.message, "error");
+    } finally {
+      setComprando(null);
     }
   };
 
@@ -183,19 +211,60 @@ export default function App() {
           )}
         </aside>
 
-        {/* CENTER — QUESTS */}
+        {/* CENTER — QUESTS / SHOP */}
         <main style={styles.main}>
-          <h2 style={styles.sectionTitle}>📜 Mural de Missões</h2>
-          <div style={styles.questList}>
-            {missoes.map((missao) => (
-              <CartaoMissao
-                key={missao.id}
-                missao={missao}
-                onAccept={aceitarMissao}
-                onComplete={concluirMissao}
-              />
-            ))}
+          <div style={styles.tabBar}>
+            <button
+              style={abaAtiva === "missoes" ? styles.tabAtivo : styles.tab}
+              onClick={() => setAbaAtiva("missoes")}
+            >
+              📜 Missões
+            </button>
+            <button
+              style={abaAtiva === "loja" ? styles.tabAtivo : styles.tab}
+              onClick={() => setAbaAtiva("loja")}
+            >
+              🏪 Loja
+            </button>
           </div>
+
+          {abaAtiva === "missoes" ? (
+            <>
+              <h2 style={styles.sectionTitle}>📜 Mural de Missões</h2>
+              <div style={styles.questList}>
+                {missoes.map((missao) => (
+                  <CartaoMissao
+                    key={missao.id}
+                    missao={missao}
+                    onAccept={aceitarMissao}
+                    onComplete={concluirMissao}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 style={styles.sectionTitle}>🏪 Loja de Itens</h2>
+              <div style={styles.questList}>
+                {itensLoja.length === 0 ? (
+                  <div style={styles.skeleton}>Nenhum item disponível...</div>
+                ) : (
+                  itensLoja.map((item) => (
+                    <CartaoItemLoja
+                      key={item.id}
+                      item={item}
+                      quantidade={quantidades[item.id] || 1}
+                      comprando={comprando}
+                      onQuantidadeChange={(id, val) =>
+                        setQuantidades((prev) => ({ ...prev, [id]: val }))
+                      }
+                      onComprar={comprarItemLoja}
+                    />
+                  ))
+                )}
+              </div>
+            </>
+          )}
         </main>
 
         {/* RIGHT — LOG */}
@@ -296,6 +365,63 @@ function CartaoMissao({ missao, onAccept, onComplete }) {
             <span style={styles.doneLabel}>🏆 Completa</span>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+const COR_RARIDADE = {
+  Comum: "#94a3b8",
+  Raro: "#60a5fa",
+  Épico: "#a78bfa",
+};
+
+function CartaoItemLoja({ item, quantidade, comprando, onQuantidadeChange, onComprar }) {
+  const corRaridade = COR_RARIDADE[item.raridade] || "#aaa";
+  const carregando = comprando === item.id;
+  return (
+    <div style={styles.lojaCard}>
+      <div style={styles.lojaHeader}>
+        <span style={styles.lojaIcon}>🔹</span>
+        <div style={{ flex: 1 }}>
+          <div style={styles.questTitle}>{item.nome}</div>
+        </div>
+        <span
+          style={{
+            ...styles.badge,
+            color: corRaridade,
+            borderColor: corRaridade,
+          }}
+        >
+          {item.raridade}
+        </span>
+        <div style={styles.lojaPreco}>{item.preco}💰</div>
+      </div>
+      <div style={styles.lojaFooter}>
+        <div style={styles.lojaQtd}>
+          <button
+            style={styles.qtdBtn}
+            onClick={() => onQuantidadeChange(item.id, Math.max(1, quantidade - 1))}
+            disabled={carregando}
+          >
+            −
+          </button>
+          <span style={styles.qtdVal}>{quantidade}</span>
+          <button
+            style={styles.qtdBtn}
+            onClick={() => onQuantidadeChange(item.id, quantidade + 1)}
+            disabled={carregando}
+          >
+            +
+          </button>
+        </div>
+        <button
+          style={carregando ? styles.btnComprarDisabled : styles.btnComprar}
+          onClick={() => onComprar(item.id)}
+          disabled={carregando}
+        >
+          {carregando ? "⏳" : "🛒 Comprar"}
+        </button>
       </div>
     </div>
   );
@@ -539,5 +665,101 @@ const styles = {
     borderRadius: 4,
     overflow: "auto",
     maxHeight: 200,
+  },
+  tabBar: {
+    display: "flex",
+    gap: 0,
+    marginBottom: 16,
+    borderBottom: "2px solid #2e2b4a",
+  },
+  tab: {
+    background: "transparent",
+    border: "none",
+    borderBottom: "2px solid transparent",
+    color: "#666",
+    padding: "8px 16px",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 600,
+    marginBottom: -2,
+  },
+  tabAtivo: {
+    background: "transparent",
+    border: "none",
+    borderBottom: "2px solid #f5c518",
+    color: "#f5c518",
+    padding: "8px 16px",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 600,
+    marginBottom: -2,
+  },
+  lojaCard: {
+    background: "#131222",
+    border: "1px solid #1e1c35",
+    borderRadius: 10,
+    padding: 16,
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  lojaHeader: {
+    display: "flex",
+    gap: 12,
+    alignItems: "center",
+  },
+  lojaIcon: { fontSize: 24 },
+  lojaPreco: { fontSize: 16, fontWeight: 700, color: "#facc15", whiteSpace: "nowrap" },
+  lojaFooter: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  lojaQtd: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  qtdBtn: {
+    background: "#1e1c35",
+    border: "1px solid #2e2b4a",
+    color: "#e8e6f0",
+    borderRadius: 4,
+    width: 28,
+    height: 28,
+    cursor: "pointer",
+    fontSize: 16,
+    fontWeight: 700,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qtdVal: {
+    fontSize: 16,
+    fontWeight: 600,
+    color: "#e8e6f0",
+    width: 24,
+    textAlign: "center",
+  },
+  btnComprar: {
+    background: "#1e3a5f",
+    border: "1px solid #60a5fa",
+    color: "#60a5fa",
+    borderRadius: 6,
+    padding: "6px 14px",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 600,
+  },
+  btnComprarDisabled: {
+    background: "#1a1830",
+    border: "1px solid #2e2b4a",
+    color: "#555",
+    borderRadius: 6,
+    padding: "6px 14px",
+    cursor: "not-allowed",
+    fontSize: 13,
+    fontWeight: 600,
   },
 };
