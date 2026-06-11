@@ -1,8 +1,10 @@
+import anyio
 import httpx
 import xml.etree.ElementTree as ET
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import websockets
 
 app = FastAPI(title="Quest Board — API Gateway", version="1.0.0")
 
@@ -112,6 +114,11 @@ async def _extrair_resultado_soap(xml_root: ET.Element, operacao: str) -> ET.Ele
 
 
 # ── Hero routes ──────────────────────────────────────────────
+
+
+@app.get("/api/heroes")
+async def listar_herois():
+    return await encaminhar("GET", f"{SERVICO_HEROI}/heroes", "/api/heroes")
 
 
 @app.get("/api/heroes/{hero_id}")
@@ -327,6 +334,43 @@ async def comprar_item(request: Request):
         )
 
 
+# ── Trade WebSocket Proxy ────────────────────────────────────
+
+SERVICO_TRADE = "ws://localhost:8080"
+
+@app.websocket("/ws/trade")
+async def trade_proxy(websocket: WebSocket):
+    await websocket.accept()
+
+    hero_id = websocket.query_params.get("hero_id", "")
+    go_url = f"{SERVICO_TRADE}/ws/trade?hero_id={hero_id}"
+
+    try:
+        async with websockets.connect(go_url) as go_ws:
+            async def react_to_go():
+                try:
+                    while True:
+                        msg = await websocket.receive_text()
+                        await go_ws.send(msg)
+                except WebSocketDisconnect:
+                    pass
+
+            async def go_to_react():
+                try:
+                    async for msg in go_ws:
+                        await websocket.send_text(msg)
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(react_to_go)
+                tg.start_soon(go_to_react)
+    except websockets.exceptions.WebSocketException:
+        await websocket.close(code=1011, reason="Trade service unavailable")
+    except Exception:
+        await websocket.close(code=1011, reason="Internal gateway error")
+
+
 # ── Root ─────────────────────────────────────────────────────
 
 
@@ -345,5 +389,7 @@ def raiz():
             "concluir_missao": f"{URL_GATEWAY}/api/quests/{{quest_id}}/complete",
             "itens_loja": f"{URL_GATEWAY}/api/shop/items",
             "comprar_item": f"{URL_GATEWAY}/api/shop/buy",
+            "herois": f"{URL_GATEWAY}/api/heroes",
+            "troca_websocket": f"{URL_GATEWAY}/ws/trade?hero_id={{hero_id}}",
         },
     }

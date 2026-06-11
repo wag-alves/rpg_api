@@ -99,6 +99,33 @@ def adicionar_xp(hero_id: str, body: SolicitacaoAdicionarXp):
     )
 
 
+@app.get("/heroes")
+def listar_herois():
+    herois = []
+    for hid, heroi in heroes.items():
+        herois.append(RespostaHeroi(
+            id=heroi["id"],
+            nome=heroi["nome"],
+            nome_classe=heroi["classe"],
+            nivel=heroi["nivel"],
+            avatar=heroi["avatar"],
+            hp=heroi["hp"],
+            max_hp=heroi["max_hp"],
+            mp=heroi["mp"],
+            max_mp=heroi["max_mp"],
+            xp=heroi["xp"],
+            xp_next=heroi["xp_next"],
+            gold=heroi["ouro"],
+            active_quests=heroi["missoes_ativas"],
+            completed_quests=heroi["missoes_concluidas"],
+            links={
+                "self": f"{BASE_URL}/heroes/{hid}",
+                "estatisticas": f"{BASE_URL}/heroes/{hid}/stats",
+            },
+        ))
+    return herois
+
+
 @app.get("/")
 def raiz():
     return {
