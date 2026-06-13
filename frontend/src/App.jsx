@@ -1,6 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 
-const URL_GATEWAY = `${window.location.protocol}//${window.location.hostname.replace("5173","8000")}`;
+const URL_GATEWAY = (() => {
+  const protocol = window.location.protocol;
+  const hostname = window.location.hostname;
+  
+  if (hostname.includes('.github.dev')) {
+    const backendHostname = hostname.replace('5173', '8000');
+    return `${protocol}//${backendHostname}`; 
+  }
+
+  return `${protocol}//${hostname}:8000`;
+})();
+
 const ID_HEROI = "1";
 
 const COR_DIFICULDADE = {
