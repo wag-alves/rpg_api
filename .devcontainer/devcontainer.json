@@ -6,12 +6,12 @@
   },
   "forwardPorts": [5173, 8000, 8001, 8002, 5114, 8080],
   "portsAttributes": {
-    "5173": { "label": "Frontend (Vite)", "onAutoForward": "notify" },
-    "8000": { "label": "API Gateway", "onAutoForward": "notify" },
-    "8001": { "label": "Hero Service", "onAutoForward": "notify" },
-    "8002": { "label": "Quest Service", "onAutoForward": "notify" },
-    "5114": { "label": "Shop Service (C#)", "onAutoForward": "notify" },
-    "8080": { "label": "Boss Service (Go)", "onAutoForward": "notify" }
+    "5173": { "label": "Frontend (Vite)", "onAutoForward": "notify", "visibility": "public" },
+    "8000": { "label": "API Gateway", "onAutoForward": "notify", "visibility": "public" },
+    "8001": { "label": "Hero Service", "onAutoForward": "notify", "visibility": "private" },
+    "8002": { "label": "Quest Service", "onAutoForward": "notify", "visibility": "private" },
+    "5114": { "label": "Shop Service (C#)", "onAutoForward": "notify", "visibility": "private" },
+    "8080": { "label": "Boss Service (Go)", "onAutoForward": "notify", "visibility": "private" }
   },
   "postCreateCommand": ".devcontainer/post-create.sh",
   "customizations": {
