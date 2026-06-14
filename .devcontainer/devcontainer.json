@@ -1,0 +1,29 @@
+{
+  "name": "rpg_api",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "forwardPorts": [5173, 8000, 8001, 8002, 5114, 8080],
+  "portsAttributes": {
+    "5173": { "label": "Frontend (Vite)", "onAutoForward": "notify" },
+    "8000": { "label": "API Gateway", "onAutoForward": "notify" },
+    "8001": { "label": "Hero Service", "onAutoForward": "notify" },
+    "8002": { "label": "Quest Service", "onAutoForward": "notify" },
+    "5114": { "label": "Shop Service (C#)", "onAutoForward": "notify" },
+    "8080": { "label": "Boss Service (Go)", "onAutoForward": "notify" }
+  },
+  "postCreateCommand": ".devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "golang.go",
+        "ms-dotnettools.csdevkit",
+        "dbaeumer.vscode-eslint",
+        "bierner.markdown-preview-github-styles"
+      ]
+    }
+  }
+}
