@@ -54,6 +54,7 @@ export default function App() {
   const [lobbyFull, setLobbyFull] = useState(false);
   const [bossSpawnAlert, setBossSpawnAlert] = useState(null);
   const wsRef = useRef(null);
+  const heroIdRef = useRef(null);
 
   const adicionarLog = useCallback((method, path, status, payload) => {
     const entry = {
@@ -67,10 +68,10 @@ export default function App() {
     setLogs((prev) => [entry, ...prev].slice(0, 30));
   }, []);
 
-  const mostrarToast = (msg, type = "success") => {
+  const mostrarToast = useCallback((msg, type = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
-  };
+  }, []);
 
   const buscarApi = useCallback(
     async (method, path, body = null) => {
@@ -101,13 +102,19 @@ export default function App() {
   );
 
   const carregarTudo = useCallback(async () => {
-    if (!heroi) return;
+    const id = heroIdRef.current;
+    if (!id) return;
     setCarregando(true);
     try {
-      const [s, q] = await Promise.all([
-        buscarApi("GET", `/api/heroes/${heroi.id}/stats`),
+      const [h, s, q] = await Promise.all([
+        buscarApi("GET", `/api/heroes/${id}`),
+        buscarApi("GET", `/api/heroes/${id}/stats`),
         buscarApi("GET", "/api/quests"),
       ]);
+      setHeroi(prev => {
+        if (prev?.gold === h.gold && prev?.xp === h.xp && prev?.nivel === h.nivel) return prev;
+        return h;
+      });
       setEstatisticas(s);
       setMissoes(q.missoes || []);
 
@@ -120,7 +127,7 @@ export default function App() {
     } finally {
       setCarregando(false);
     }
-  }, [buscarApi, heroi]);
+  }, [buscarApi, mostrarToast]);
 
   useEffect(() => {
     const checkout = async () => {
@@ -139,7 +146,9 @@ export default function App() {
         const json = await res.json();
         const h = json?.data || json;
         sessionStorage.setItem("hero_id", h.id);
+        heroIdRef.current = h.id;
         setHeroi(h);
+        carregarTudo();
       } catch (e) {
         setErroAlocacao(true);
       }
@@ -154,11 +163,7 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (heroi) {
-      carregarTudo();
-    }
-  }, [heroi, carregarTudo]);
+
 
   const aceitarMissao = async (questId) => {
     if (!heroi) return;
@@ -193,7 +198,7 @@ export default function App() {
     setComprando(itemId);
     try {
       const res = await buscarApi("POST", "/api/shop/buy", {
-        hero_id: parseInt(heroi.id),
+        hero_id: heroi.id,
         item_id: itemId,
         quantidade: qtd,
       });

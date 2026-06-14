@@ -231,8 +231,8 @@ async def comprar_item(request: Request):
 
     # REST: Validação de saldo do herói antes de chamar o SOAP para comprar
     try:
-        async with httpx.AsyncClient() as client:
-            hero_resp = await client.get(f"{SERVICO_HEROI}/heroes/{hero_id}", timeout=5.0)
+        async with httpx.AsyncClient() as http_client:
+            hero_resp = await http_client.get(f"{SERVICO_HEROI}/heroes/{hero_id}", timeout=5.0)
             if hero_resp.status_code >= 400:
                 return JSONResponse(status_code=502, content=envelope_hateoas({
                     "success": False,
@@ -278,7 +278,7 @@ async def comprar_item(request: Request):
         # Enviamos um dicionário que mapeia os campos exigidos pela classe `request` no C#
         resposta_compra = await client.service.ComprarItem( 
             request={
-                "HeroId": hero_id,
+                "HeroId": int(hero_id),
                 "ItemId": item_id,
                 "Quantidade": quantidade
             }
