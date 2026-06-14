@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from data import heroes
 from schemas import RespostaHeroi, RespostaEstatisticas, SolicitacaoAdicionarXp, RespostaAdicionarXp
-from schemas import SolicitacaoAlterarGold, RespostaAlterarGold
+from schemas import SolicitacaoAlterarGold, RespostaAlterarGold, RespostaCheckout, RespostaCheckin
 
 app = FastAPI(title="Hero Service", version="1.0.0")
 
@@ -124,6 +124,78 @@ def alterar_gold(hero_id: str, body: SolicitacaoAlterarGold):
         gold=heroi["ouro"],
         links={
             "self": f"{BASE_URL}/heroes/{hero_id}/gold",
+            "heroi": f"{BASE_URL}/heroes/{hero_id}",
+        },
+    )
+
+
+@app.get("/heroes", response_model=list[RespostaHeroi])
+def listar_herois():
+    herois = []
+    for heroi in heroes.values():
+        herois.append(RespostaHeroi(
+            id=heroi["id"],
+            nome=heroi["nome"],
+            nome_classe=heroi["classe"],
+            nivel=heroi["nivel"],
+            avatar=heroi["avatar"],
+            hp=heroi["hp"],
+            max_hp=heroi["max_hp"],
+            mp=heroi["mp"],
+            max_mp=heroi["max_mp"],
+            xp=heroi["xp"],
+            xp_next=heroi["xp_next"],
+            gold=heroi["ouro"],
+            active_quests=heroi["missoes_ativas"],
+            completed_quests=heroi["missoes_concluidas"],
+            links={
+                "self": f"{BASE_URL}/heroes/{heroi['id']}",
+                "estatisticas": f"{BASE_URL}/heroes/{heroi['id']}/stats",
+            },
+        ))
+    return herois
+
+
+@app.post("/heroes/checkout", response_model=RespostaCheckout)
+def checkout_heroi():
+    for heroi in heroes.values():
+        if heroi["status"] == "disponivel":
+            heroi["status"] = "em_uso"
+            return RespostaCheckout(
+                id=heroi["id"],
+                nome=heroi["nome"],
+                nome_classe=heroi["classe"],
+                nivel=heroi["nivel"],
+                avatar=heroi["avatar"],
+                status=heroi["status"],
+                hp=heroi["hp"],
+                max_hp=heroi["max_hp"],
+                mp=heroi["mp"],
+                max_mp=heroi["max_mp"],
+                xp=heroi["xp"],
+                xp_next=heroi["xp_next"],
+                gold=heroi["ouro"],
+                estatisticas=heroi["estatisticas"],
+                links={
+                    "self": f"{BASE_URL}/heroes/{heroi['id']}",
+                    "estatisticas": f"{BASE_URL}/heroes/{heroi['id']}/stats",
+                },
+            )
+    raise HTTPException(status_code=409, detail="Todos os heróis já estão em batalha!")
+
+
+@app.post("/heroes/{hero_id}/checkin", response_model=RespostaCheckin)
+def checkin_heroi(hero_id: str):
+    heroi = heroes.get(hero_id)
+    if not heroi:
+        raise HTTPException(status_code=404, detail="Hero not found")
+    heroi["status"] = "disponivel"
+    return RespostaCheckin(
+        id=hero_id,
+        status=heroi["status"],
+        message=f"{heroi['nome']} foi liberado.",
+        links={
+            "self": f"{BASE_URL}/heroes/{hero_id}/checkin",
             "heroi": f"{BASE_URL}/heroes/{hero_id}",
         },
     )

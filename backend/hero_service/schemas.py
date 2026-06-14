@@ -80,3 +80,28 @@ class RespostaAlterarGold(BaseModel):
     id_heroi: str
     gold: int
     links: dict
+
+
+class RespostaCheckout(BaseModel):
+    id: str
+    nome: str
+    nome_classe: str
+    nivel: int
+    avatar: str
+    status: str
+    hp: int
+    max_hp: int
+    mp: int
+    max_mp: int
+    xp: int
+    xp_next: int
+    gold: int
+    estatisticas: dict
+    links: dict
+
+
+class RespostaCheckin(BaseModel):
+    id: str
+    status: str
+    message: str
+    links: dict

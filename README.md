@@ -1,58 +1,85 @@
-# RPG API — Microserviços com FastAPI
+# RPG API — Microserviços com FastAPI + Go + .NET
 
-Sistema de mural de missões estilo RPG demonstrando arquitetura de microserviços com FastAPI, API Gateway e HATEOAS.
+Sistema de mural de missões estilo RPG demonstrando arquitetura de microserviços com FastAPI, API Gateway, HATEOAS, SOAP, WebSocket e Go.
 
 ## Arquitetura
 
 ```
 Frontend React (5173)
         ↓
-API Gateway — porta 8000
-├── /api/heroes/*  →  Serviço do Herói  — porta 8001
-└── /api/quests/*  →  Serviço das Missões — porta 8002
+API Gateway (FastAPI) — porta 8000
+├── /api/heroes/*  →  Hero Service (FastAPI) — porta 8001
+├── /api/quests/*  →  Quest Service (FastAPI) — porta 8002
+├── /api/shop/*    →  Shop Service (.NET/SOAP) — porta 5114
+└── /ws/boss       →  Boss Service (Go/WebSocket) — porta 8080
 ```
 
+### Serviços
+
+| Serviço | Stack | Porta | Descrição |
+|---------|-------|-------|-----------|
+| Gateway | FastAPI | 8000 | API Gateway com HATEOAS e proxy WebSocket |
+| Hero Service | FastAPI | 8001 | Heróis, stats, XP, gold, checkout de personagens |
+| Quest Service | FastAPI | 8002 | Mural de missões |
+| Shop Service | .NET 10 / SOAP | 5114 | Loja de itens |
+| Boss Service | Go / Gorilla WebSocket | 8080 | World Boss em tempo real |
+
+## Sistema de Checkout (4 Heróis)
+
+Cada pessoa que acessa recebe um herói único da pool de 4. Máximo de 4 jogadores simultâneos.
+
+| Herói | Classe | ATK | DEF | SPD | INT |
+|-------|--------|-----|-----|-----|-----|
+| Gandalf 🧙 | Mago das Sombras | 72 | 34 | 55 | 91 |
+| Lyra 🏹 | Arqueira Ágil | 65 | 20 | 90 | 30 |
+| Thorn ⚔️ | Paladino Guardião | 95 | 50 | 25 | 15 |
+| Vesper 🌙 | Feiticeira das Sombras | 30 | 15 | 70 | 88 |
+
+## World Boss (Tempo Real)
+
+Batalha global contra o **Dragão de Gelo de Vorheim** via WebSocket.
+
+- Até 4 heróis atacam o mesmo boss simultaneamente
+- Dano baseado no ATK do herói
+- Cooldown de 2 segundos entre ataques
+- Boss foge após 5 minutos
+- Recompensa proporcional ao dano causado
+- Leaderboard em tempo real (top 5)
+
+### Como usar
+
+1. Acesse o frontend
+2. Um herói da pool é atribuído automaticamente
+3. Vá até a aba **🔥 Chefe**
+4. Clique em **"Invocar Boss"**
+5. Ataque com o botão **⚔️ ATACAR**
+6. Acompanhe o HP, leaderboard e eventos em tempo real
 
 ## Pré-requisitos
 
 ```bash
-# Python e dependências
+# Python
 pip install -r requirements.txt
 
-# Node.js para o frontend (se ainda não criou)
-npm create vite@latest frontend -- --template react
+# Node.js
+cd frontend && npm install
+
+# Go 1.21+
+# já incluso no boss_service
+
+# .NET 10
+# já incluso no shop_service
 ```
 
-## Como rodar (4 terminais)
+## Como rodar
 
-### Terminal 1 — Hero Service
 ```bash
-cd backend/hero-service
-uvicorn main:app --port 8001 --reload
+npm start
 ```
 
-### Terminal 2 — Quest Service
-```bash
-cd backend/quest-service
-uvicorn main:app --port 8002 --reload
-```
-
-### Terminal 3 — API Gateway
-```bash
-cd backend/gateway
-uvicorn main:app --port 8000 --reload
-```
-
-### Terminal 4 — Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
+Isso inicia todos os serviços simultaneamente com `concurrently`.
 
 Acesse: **http://localhost:5173**
-
----
 
 ## Endpoints
 
@@ -60,15 +87,44 @@ Acesse: **http://localhost:5173**
 
 | Método | Rota | Descrição |
 |--------|------|-----------|
-| GET | /api/heroes/1 | Perfil do herói |
-| GET | /api/heroes/1/stats | Atributos (ATK, DEF, SPD, INT) |
-| PATCH | /api/heroes/1/xp | Adicionar XP |
+| POST | /api/heroes/checkout | Pegar herói disponível da pool |
+| POST | /api/heroes/{id}/checkin | Liberar herói |
+| GET | /api/heroes/{id} | Perfil do herói |
+| GET | /api/heroes/{id}/stats | Atributos (ATK, DEF, SPD, INT) |
+| PATCH | /api/heroes/{id}/xp | Adicionar XP |
+| PATCH | /api/heroes/{id}/gold | Adicionar gold |
 | GET | /api/quests | Listar missões |
 | GET | /api/quests/{id} | Detalhe da missão |
 | POST | /api/quests/{id}/accept | Aceitar missão |
 | POST | /api/quests/{id}/complete | Concluir missão |
+| GET | /api/shop/items | Listar itens da loja |
+| POST | /api/shop/buy | Comprar item |
+| POST | /api/boss/spawn | Invocar World Boss |
+| WS | /ws/boss | WebSocket da batalha |
+
+### Protocolo WebSocket (Boss)
+
+**Cliente → Servidor:**
+```json
+{"type": "attack"}
+```
+
+**Servidor → Cliente:**
+
+| Tipo | Descrição |
+|------|-----------|
+| welcome | Herói atribuído e conectado |
+| lobby_full | 4 slots ocupados |
+| boss_spawn | Boss apareceu |
+| boss_hp | Atualização de HP |
+| top_damage | Leaderboard top 5 |
+| hero_joined / hero_left | Alguém entrou/saiu |
+| boss_defeated | Boss derrotado |
+| boss_escaped | Boss fugiu |
+| reward | Recompensa individual |
 
 ### HATEOAS
+
 Toda resposta do gateway inclui:
 ```json
 {
@@ -83,4 +139,3 @@ Toda resposta do gateway inclui:
   }
 }
 ```
-

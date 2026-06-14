@@ -1,5 +1,8 @@
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+import json
+import asyncio
+import websockets
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -21,6 +24,7 @@ app.add_middleware(
 SERVICO_HEROI = "http://localhost:8001"
 SERVICO_MISSAO = "http://localhost:8002"
 SERVICO_LOJA = "http://localhost:5114"
+SERVICO_BOSS = "http://localhost:8080"
 URL_GATEWAY = "http://localhost:8000"
 
 
@@ -225,7 +229,7 @@ async def comprar_item(request: Request):
             "message": "Erro ao buscar itens da loja para validação.",
         }, "/api/shop/buy"))
 
-    # REST: Validação de saldo (mantida exatamente como você fez)
+    # REST: Validação de saldo do herói antes de chamar o SOAP para comprar
     try:
         async with httpx.AsyncClient() as client:
             hero_resp = await client.get(f"{SERVICO_HEROI}/heroes/{hero_id}", timeout=5.0)
@@ -270,7 +274,6 @@ async def comprar_item(request: Request):
             "message": f"Erro durante validação de saldo: {str(e)}",
         }, "/api/shop/buy"))
 
-    # ── Nova Requisição SOAP Elegante com Zeep ──
     try:
         # Enviamos um dicionário que mapeia os campos exigidos pela classe `request` no C#
         resposta_compra = await client.service.ComprarItem( 
@@ -323,6 +326,73 @@ async def comprar_item(request: Request):
         raise HTTPException(status_code=503, detail=f"Shop service error: {e}")
 
 
+# ── Checkout / Checkin ──────────────────────────────────────
+
+@app.post("/api/heroes/checkout")
+async def checkout_heroi():
+    return await encaminhar(
+        "POST", f"{SERVICO_HEROI}/heroes/checkout", "/api/heroes/checkout"
+    )
+
+@app.post("/api/heroes/{hero_id}/checkin")
+async def checkin_heroi(hero_id: str):
+    return await encaminhar(
+        "POST", f"{SERVICO_HEROI}/heroes/{hero_id}/checkin", f"/api/heroes/{hero_id}/checkin"
+    )
+
+
+# ── Internal: Boss service uses this to get hero pool ───────
+
+@app.get("/api/boss/hero-pool")
+async def boss_hero_pool():
+    return await encaminhar("GET", f"{SERVICO_HEROI}/heroes", "/api/boss/hero-pool")
+
+
+# ── Boss routes ─────────────────────────────────────────────
+
+@app.post("/api/boss/spawn")
+async def spawn_boss():
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.post(f"{SERVICO_BOSS}/spawn", timeout=5.0)
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        except httpx.ConnectError:
+            raise HTTPException(status_code=503, detail="Boss service unavailable")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Boss service timeout")
+
+
+@app.websocket("/ws/boss")
+async def boss_websocket(ws_in: WebSocket):
+    await ws_in.accept()
+    try:
+        async with websockets.connect("ws://localhost:8080/ws") as ws_out:
+            async def forward_to_client():
+                try:
+                    async for msg in ws_out:
+                        await ws_in.send_text(msg)
+                except WebSocketDisconnect:
+                    pass
+
+            async def forward_to_server():
+                try:
+                    while True:
+                        data = await ws_in.receive_text()
+                        await ws_out.send(data)
+                except WebSocketDisconnect:
+                    pass
+
+            await asyncio.gather(
+                forward_to_client(),
+                forward_to_server(),
+            )
+    except Exception:
+        try:
+            await ws_in.close()
+        except RuntimeError:
+            pass
+
+
 # ── Root ─────────────────────────────────────────────────────
 
 @app.get("/")
@@ -333,6 +403,8 @@ def raiz():
         "routes": {
             "heroi": f"{URL_GATEWAY}/api/heroes/{{hero_id}}",
             "estatisticas_heroi": f"{URL_GATEWAY}/api/heroes/{{hero_id}}/stats",
+            "checkout": f"{URL_GATEWAY}/api/heroes/checkout",
+            "checkin": f"{URL_GATEWAY}/api/heroes/{{hero_id}}/checkin",
             "adicionar_xp": f"{URL_GATEWAY}/api/heroes/{{hero_id}}/xp",
             "missoes": f"{URL_GATEWAY}/api/quests",
             "detalhe_missao": f"{URL_GATEWAY}/api/quests/{{quest_id}}",
@@ -340,5 +412,7 @@ def raiz():
             "concluir_missao": f"{URL_GATEWAY}/api/quests/{{quest_id}}/complete",
             "itens_loja": f"{URL_GATEWAY}/api/shop/items",
             "comprar_item": f"{URL_GATEWAY}/api/shop/buy",
+            "boss_spawn": f"{URL_GATEWAY}/api/boss/spawn",
+            "boss_websocket": f"{URL_GATEWAY}/ws/boss",
         },
     }

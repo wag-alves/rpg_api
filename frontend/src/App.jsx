@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const URL_GATEWAY = (() => {
   const protocol = window.location.protocol;
@@ -12,7 +12,7 @@ const URL_GATEWAY = (() => {
   return `${protocol}//${hostname}:8000`;
 })();
 
-const ID_HEROI = "1";
+const WS_GATEWAY = URL_GATEWAY.replace("http://", "ws://").replace("https://", "wss://");
 
 const COR_DIFICULDADE = {
   Fácil: "#4ade80",
@@ -39,11 +39,20 @@ export default function App() {
   const [logs, setLogs] = useState([]);
   const [carregando, setCarregando] = useState(false);
   const [toast, setToast] = useState(null);
+  const [erroAlocacao, setErroAlocacao] = useState(false);
 
   const [itensLoja, setItensLoja] = useState([]);
   const [abaAtiva, setAbaAtiva] = useState("missoes");
   const [quantidades, setQuantidades] = useState({});
   const [comprando, setComprando] = useState(null);
+
+  const [boss, setBoss] = useState(null);
+  const [bossLog, setBossLog] = useState([]);
+  const [topDamage, setTopDamage] = useState([]);
+  const [reward, setReward] = useState(null);
+  const [ataqueCooldown, setAtaqueCooldown] = useState(false);
+  const [lobbyFull, setLobbyFull] = useState(false);
+  const wsRef = useRef(null);
 
   const adicionarLog = useCallback((method, path, status, payload) => {
     const entry = {
@@ -91,14 +100,13 @@ export default function App() {
   );
 
   const carregarTudo = useCallback(async () => {
+    if (!heroi) return;
     setCarregando(true);
     try {
-      const [h, s, q] = await Promise.all([
-        buscarApi("GET", `/api/heroes/${ID_HEROI}`),
-        buscarApi("GET", `/api/heroes/${ID_HEROI}/stats`),
+      const [s, q] = await Promise.all([
+        buscarApi("GET", `/api/heroes/${heroi.id}/stats`),
         buscarApi("GET", "/api/quests"),
       ]);
-      setHeroi(h);
       setEstatisticas(s);
       setMissoes(q.missoes || []);
 
@@ -111,16 +119,43 @@ export default function App() {
     } finally {
       setCarregando(false);
     }
-  }, [buscarApi]);
+  }, [buscarApi, heroi]);
 
   useEffect(() => {
-    carregarTudo();
-  }, [carregarTudo]);
+    const checkout = async () => {
+      try {
+        const res = await fetch(`${URL_GATEWAY}/api/heroes/checkout`, { method: "POST" });
+        if (res.status === 409) {
+          setErroAlocacao(true);
+          return;
+        }
+        const json = await res.json();
+        const h = json?.data || json;
+        setHeroi(h);
+      } catch (e) {
+        setErroAlocacao(true);
+      }
+    };
+    checkout();
+
+    return () => {
+      if (heroi) {
+        navigator.sendBeacon(`${URL_GATEWAY}/api/heroes/${heroi.id}/checkin`, "");
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (heroi) {
+      carregarTudo();
+    }
+  }, [heroi, carregarTudo]);
 
   const aceitarMissao = async (questId) => {
+    if (!heroi) return;
     try {
       const res = await buscarApi("POST", `/api/quests/${questId}/accept`, {
-        id_heroi: ID_HEROI,
+        id_heroi: heroi.id,
       });
       mostrarToast(res.message);
       await carregarTudo();
@@ -130,10 +165,11 @@ export default function App() {
   };
 
   const concluirMissao = async (missao) => {
+    if (!heroi) return;
     try {
       const res = await buscarApi("POST", `/api/quests/${missao.id}/complete`);
       mostrarToast(res.message);
-      await buscarApi("PATCH", `/api/heroes/${ID_HEROI}/xp`, {
+      await buscarApi("PATCH", `/api/heroes/${heroi.id}/xp`, {
         quantidade: missao.recompensa_xp,
       });
       await carregarTudo();
@@ -143,11 +179,12 @@ export default function App() {
   };
 
   const comprarItemLoja = async (itemId) => {
+    if (!heroi) return;
     const qtd = quantidades[itemId] || 1;
     setComprando(itemId);
     try {
       const res = await buscarApi("POST", "/api/shop/buy", {
-        hero_id: parseInt(ID_HEROI),
+        hero_id: parseInt(heroi.id),
         item_id: itemId,
         quantidade: qtd,
       });
@@ -159,6 +196,106 @@ export default function App() {
       setComprando(null);
     }
   };
+
+  const conectarBossWS = useCallback(() => {
+    if (!heroi || wsRef.current) return;
+    const ws = new WebSocket(`${WS_GATEWAY}/ws/boss?hero_id=${heroi.id}`);
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        switch (msg.type) {
+          case "welcome":
+            setLobbyFull(false);
+            break;
+          case "lobby_full":
+            setLobbyFull(true);
+            break;
+          case "boss_spawn":
+            setBoss(msg.payload);
+            setBossLog([]);
+            setReward(null);
+            break;
+          case "boss_status":
+            setBoss(msg.payload);
+            break;
+          case "boss_hp":
+            setBoss((prev) => prev ? { ...prev, hp: msg.payload.hp, max_hp: msg.payload.max_hp } : prev);
+            setBossLog((prev) => [`⚔️ ${msg.payload.attacker_name} causou ${msg.payload.damage} de dano!`, ...prev].slice(0, 20));
+            break;
+          case "top_damage":
+            setTopDamage(msg.payload || []);
+            break;
+          case "hero_joined":
+            setBossLog((prev) => [`➡️ ${msg.payload.hero_name} entrou na batalha!`, ...prev].slice(0, 20));
+            break;
+          case "hero_left":
+            setBossLog((prev) => [`⬅️ ${msg.payload.hero_name} saiu da batalha!`, ...prev].slice(0, 20));
+            break;
+          case "boss_defeated":
+            setBoss((prev) => prev ? { ...prev, hp: 0, active: false } : prev);
+            setBossLog((prev) => [`🏆 Boss derrotado!`, ...prev].slice(0, 20));
+            break;
+          case "boss_escaped":
+            setBoss((prev) => prev ? { ...prev, hp: 0, active: false } : prev);
+            setBossLog((prev) => [`💨 O boss escapou!`, ...prev].slice(0, 20));
+            break;
+          case "reward":
+            setReward(msg.payload);
+            break;
+        }
+      } catch (e) {}
+    };
+
+    ws.onclose = () => {
+      wsRef.current = null;
+    };
+  }, [heroi]);
+
+  const atacarBoss = async () => {
+    if (!wsRef.current || ataqueCooldown) return;
+    wsRef.current.send(JSON.stringify({ type: "attack" }));
+    setAtaqueCooldown(true);
+    setTimeout(() => setAtaqueCooldown(false), 2000);
+  };
+
+  const iniciarBoss = async () => {
+    try {
+      await fetch(`${URL_GATEWAY}/api/boss/spawn`, { method: "POST" });
+    } catch (e) {
+      mostrarToast("Erro ao iniciar boss", "error");
+    }
+  };
+
+  useEffect(() => {
+    if (heroi && abaAtiva === "boss") {
+      conectarBossWS();
+    }
+    return () => {
+      if (wsRef.current && abaAtiva !== "boss") {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [heroi, abaAtiva, conectarBossWS]);
+
+  if (erroAlocacao) {
+    return (
+      <div style={{ ...styles.root, justifyContent: "center", alignItems: "center", display: "flex" }}>
+        <div style={{ textAlign: "center", padding: 80 }}>
+          <div style={{ fontSize: 64 }}>🚫</div>
+          <h1 style={{ color: "#f87171" }}>Todos os heróis já estão em batalha!</h1>
+          <p style={{ color: "#94a3b8", fontSize: 14 }}>
+            Os 4 slots estão ocupados. Tente novamente mais tarde.
+          </p>
+          <p style={{ color: "#555", fontSize: 12, marginTop: 20 }}>
+            (Feche a aba se você já está com um herói para liberar o slot)
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const pct_xp = heroi ? Math.round((heroi.xp / heroi.xp_next) * 100) : 0;
   const pct_vida = heroi ? Math.round((heroi.hp / heroi.max_hp) * 100) : 0;
@@ -248,6 +385,12 @@ export default function App() {
             >
               🏪 Loja
             </button>
+            <button
+              style={abaAtiva === "boss" ? styles.tabAtivo : styles.tab}
+              onClick={() => setAbaAtiva("boss")}
+            >
+              🔥 Chefe
+            </button>
           </div>
 
           {abaAtiva === "missoes" ? (
@@ -264,7 +407,7 @@ export default function App() {
                 ))}
               </div>
             </>
-          ) : (
+          ) : abaAtiva === "loja" ? (
             <>
               <h2 style={styles.sectionTitle}>🏪 Loja de Itens</h2>
               <div style={styles.questList}>
@@ -285,6 +428,107 @@ export default function App() {
                   ))
                 )}
               </div>
+            </>
+          ) : (
+            <>
+              <h2 style={styles.sectionTitle}>🔥 World Boss</h2>
+              {lobbyFull ? (
+                <div style={styles.skeleton}>
+                  Os 4 heróis já estão em batalha! Aguarde um slot liberar...
+                </div>
+              ) : !boss || !boss.active ? (
+                <div style={{ textAlign: "center", marginTop: 40 }}>
+                  {reward ? (
+                    <div style={styles.rewardCard}>
+                      <div style={{ fontSize: 48 }}>🏆</div>
+                      <h3 style={{ color: "#f5c518", margin: "12px 0 4px" }}>Boss Derrotado!</h3>
+                      <p style={{ color: "#e8e6f0" }}>{reward.hero_name}</p>
+                      <p style={{ color: "#4ade80" }}>✨ +{reward.xp} XP</p>
+                      <p style={{ color: "#facc15" }}>💰 +{reward.gold} Ouro</p>
+                    </div>
+                  ) : (
+                    <>
+                      <p style={{ color: "#94a3b8", marginBottom: 20 }}>
+                        Nenhum boss ativo no momento.
+                      </p>
+                      <button style={styles.btnSpawn} onClick={iniciarBoss}>
+                        🔥 Invocar Boss
+                      </button>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <div style={styles.bossHpSection}>
+                    <div style={styles.bossName}>{boss.name}</div>
+                    <div style={styles.bossHpBar}>
+                      <div
+                        style={{
+                          ...styles.bossHpFill,
+                          width: `${(boss.hp / boss.max_hp) * 100}%`,
+                          background:
+                            boss.hp / boss.max_hp > 0.5
+                              ? "#4ade80"
+                              : boss.hp / boss.max_hp > 0.25
+                              ? "#facc15"
+                              : "#f87171",
+                        }}
+                      />
+                    </div>
+                    <div style={styles.bossHpText}>
+                      {boss.hp} / {boss.max_hp} HP
+                    </div>
+                    <div style={styles.bossTimer}>⏱ {boss.timer}s</div>
+                  </div>
+
+                  <div style={styles.bossActions}>
+                    <button
+                      style={{
+                        ...styles.btnAttack,
+                        opacity: ataqueCooldown ? 0.5 : 1,
+                      }}
+                      onClick={atacarBoss}
+                      disabled={ataqueCooldown}
+                    >
+                      {ataqueCooldown ? "⏳" : "⚔️"} ATACAR
+                    </button>
+                  </div>
+
+                  <div style={styles.bossContent}>
+                    <div style={styles.leaderboardSection}>
+                      <h3 style={styles.bossSubtitle}>🏆 Top Dano</h3>
+                      {topDamage.length === 0 ? (
+                        <p style={{ color: "#555", fontSize: 12 }}>Nenhum dano ainda...</p>
+                      ) : (
+                        topDamage.map((entry, i) => (
+                          <div key={i} style={styles.leaderboardRow}>
+                            <span style={styles.rankBadge}>
+                              {i === 0 ? "👑" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}
+                            </span>
+                            <span style={{ flex: 1, fontWeight: 600 }}>{entry.name}</span>
+                            <span style={{ color: "#888", fontSize: 12 }}>{entry.class}</span>
+                            <span style={{ color: "#facc15", fontWeight: 700, marginLeft: 12 }}>
+                              {entry.damage}
+                            </span>
+                            <span style={{ color: "#555", fontSize: 11, marginLeft: 4 }}>
+                              ({entry.pct.toFixed(1)}%)
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div style={styles.bossLogSection}>
+                      <h3 style={styles.bossSubtitle}>📋 Eventos</h3>
+                      <div style={styles.bossLogScroll}>
+                        {bossLog.map((entry, i) => (
+                          <div key={i} style={styles.bossLogEntry}>{entry}</div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </main>
@@ -783,5 +1027,123 @@ const styles = {
     cursor: "not-allowed",
     fontSize: 13,
     fontWeight: 600,
+  },
+  btnSpawn: {
+    background: "#5f1a1a",
+    border: "1px solid #f87171",
+    color: "#f87171",
+    borderRadius: 8,
+    padding: "12px 28px",
+    cursor: "pointer",
+    fontSize: 16,
+    fontWeight: 700,
+  },
+  bossHpSection: {
+    background: "#1a1830",
+    border: "1px solid #2e2b4a",
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 16,
+  },
+  bossName: {
+    fontSize: 18,
+    fontWeight: 700,
+    color: "#f87171",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  bossHpBar: {
+    height: 20,
+    background: "#1e1c35",
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  bossHpFill: {
+    height: "100%",
+    borderRadius: 10,
+    transition: "width 0.3s ease, background 0.3s ease",
+  },
+  bossHpText: {
+    textAlign: "center",
+    fontSize: 14,
+    color: "#e8e6f0",
+    marginTop: 6,
+  },
+  bossTimer: {
+    textAlign: "center",
+    fontSize: 12,
+    color: "#888",
+    marginTop: 4,
+  },
+  bossActions: {
+    display: "flex",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  btnAttack: {
+    background: "#5f1a1a",
+    border: "2px solid #f87171",
+    color: "#f87171",
+    borderRadius: 50,
+    padding: "16px 48px",
+    cursor: "pointer",
+    fontSize: 18,
+    fontWeight: 700,
+    transition: "all 0.2s",
+  },
+  bossContent: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 16,
+  },
+  bossSubtitle: {
+    fontSize: 14,
+    color: "#f5c518",
+    margin: "0 0 8px",
+  },
+  leaderboardSection: {
+    background: "#131222",
+    border: "1px solid #1e1c35",
+    borderRadius: 10,
+    padding: 12,
+  },
+  leaderboardRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 0",
+    borderBottom: "1px solid #1e1c35",
+    fontSize: 13,
+  },
+  rankBadge: { fontSize: 16, width: 28, textAlign: "center" },
+  bossLogSection: {
+    background: "#131222",
+    border: "1px solid #1e1c35",
+    borderRadius: 10,
+    padding: 12,
+    display: "flex",
+    flexDirection: "column",
+  },
+  bossLogScroll: {
+    maxHeight: 200,
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+  },
+  bossLogEntry: {
+    fontSize: 12,
+    color: "#94a3b8",
+    padding: "3px 6px",
+    background: "#0a0912",
+    borderRadius: 4,
+  },
+  rewardCard: {
+    background: "#1a1830",
+    border: "2px solid #f5c518",
+    borderRadius: 12,
+    padding: 24,
+    display: "inline-block",
+    textAlign: "center",
   },
 };
