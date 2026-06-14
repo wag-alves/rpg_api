@@ -57,27 +57,52 @@ Batalha global contra o **Dragão de Gelo de Vorheim** via WebSocket.
 
 ## Pré-requisitos
 
+| Runtime | Versão | Motivo |
+|---------|--------|--------|
+| Python | 3.10+ | Gateway, Hero Service, Quest Service |
+| Node.js | 20+ | Frontend (React/Vite) + `npm start` |
+| Go | 1.21+ | Boss Service |
+| .NET SDK | 10.0 | Shop Service (SOAP) |
+
+**Opção 1 — Local:** instale os runtimes acima manualmente, depois:
+
 ```bash
-# Python
 pip install -r requirements.txt
-
-# Node.js
 cd frontend && npm install
-
-# Go 1.21+
-# já incluso no boss_service
-
-# .NET 10
-# já incluso no shop_service
+npm install   # (concurrently na raiz)
 ```
 
-## Como rodar
+**Opção 2 — Docker/Devcontainer:** instale apenas o Docker e use o devcontainer incluso (ou GitHub Codespace). Todas as dependências são instaladas automaticamente.
+
+## GitHub Codespace
+
+Abra o projeto no GitHub Codespace. O devcontainer instala automaticamente:
+
+- Python 3.12 + dependências (`pip install -r requirements.txt`)
+- Node.js 22 + dependências do frontend
+- Go 1.22 + módulos do boss_service
+- .NET SDK 10.0
+
+Após o build, execute:
 
 ```bash
 npm start
 ```
 
-Isso inicia todos os serviços simultaneamente com `concurrently`.
+## Como rodar (local)
+
+```bash
+# Desenvolvimento local (todos os serviços)
+npm start
+
+# Ou individualmente:
+cd backend/gateway    && uvicorn main:app --port 8000 --reload
+cd backend/hero_service  && uvicorn main:app --port 8001 --reload
+cd backend/quest_service && uvicorn main:app --port 8002 --reload
+cd backend/shop_service  && dotnet run
+cd backend/boss_service  && go run .
+cd frontend           && npm run dev
+```
 
 Acesse: **http://localhost:5173**
 
