@@ -3,9 +3,9 @@ set -e
 
 echo "=== Installing project dependencies ==="
 
-# Python dependencies
+# Python dependencies (--break-system-packages is safe inside devcontainer)
 echo "[Python] Installing requirements..."
-python3 -m pip install --no-cache-dir -r requirements.txt
+python3 -m pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Root npm dependencies (concurrently)
 echo "[Node] Installing root dependencies..."

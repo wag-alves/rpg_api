@@ -6,17 +6,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates gnupg lsb-release software-properties-common \
     libicu-dev libssl-dev \
+    python3.12-venv python3.12-dev \
     && rm -rf /var/lib/apt/lists/*
-
-# === Python 3.12 ===
-RUN add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        python3.12 python3.12-venv python3.12-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
-    && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
-    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3
 
 # === Node.js 22 LTS ===
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
@@ -33,7 +24,7 @@ RUN curl -fsSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin \
     --install-dir /usr/share/dotnet \
     && ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet
 
-# Verify all runtimes installed correctly
+# Verify runtimes
 RUN python3 --version \
     && node --version \
     && npm --version \
