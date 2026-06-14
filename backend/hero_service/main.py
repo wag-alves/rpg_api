@@ -146,6 +146,7 @@ def listar_herois():
             xp=heroi["xp"],
             xp_next=heroi["xp_next"],
             gold=heroi["ouro"],
+            estatisticas=heroi["estatisticas"],
             active_quests=heroi["missoes_ativas"],
             completed_quests=heroi["missoes_concluidas"],
             links={

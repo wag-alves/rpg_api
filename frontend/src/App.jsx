@@ -52,6 +52,7 @@ export default function App() {
   const [reward, setReward] = useState(null);
   const [ataqueCooldown, setAtaqueCooldown] = useState(false);
   const [lobbyFull, setLobbyFull] = useState(false);
+  const [bossSpawnAlert, setBossSpawnAlert] = useState(null);
   const wsRef = useRef(null);
 
   const adicionarLog = useCallback((method, path, status, payload) => {
@@ -123,6 +124,12 @@ export default function App() {
 
   useEffect(() => {
     const checkout = async () => {
+      // Libera herói anterior (se F5, sessionStorage ainda tem o id)
+      const oldId = sessionStorage.getItem("hero_id");
+      if (oldId) {
+        await fetch(`${URL_GATEWAY}/api/heroes/${oldId}/checkin`, { method: "POST" });
+      }
+
       try {
         const res = await fetch(`${URL_GATEWAY}/api/heroes/checkout`, { method: "POST" });
         if (res.status === 409) {
@@ -131,6 +138,7 @@ export default function App() {
         }
         const json = await res.json();
         const h = json?.data || json;
+        sessionStorage.setItem("hero_id", h.id);
         setHeroi(h);
       } catch (e) {
         setErroAlocacao(true);
@@ -139,8 +147,9 @@ export default function App() {
     checkout();
 
     return () => {
-      if (heroi) {
-        navigator.sendBeacon(`${URL_GATEWAY}/api/heroes/${heroi.id}/checkin`, "");
+      const id = sessionStorage.getItem("hero_id");
+      if (id) {
+        navigator.sendBeacon(`${URL_GATEWAY}/api/heroes/${id}/checkin`, "");
       }
     };
   }, []);
@@ -202,9 +211,14 @@ export default function App() {
     const ws = new WebSocket(`${WS_GATEWAY}/ws/boss?hero_id=${heroi.id}`);
     wsRef.current = ws;
 
+    const logWS = (tipo, payload) => {
+      adicionarLog("WS", `/ws/boss [${tipo}]`, 0, payload);
+    };
+
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
+        logWS(msg.type, msg.payload);
         switch (msg.type) {
           case "welcome":
             setLobbyFull(false);
@@ -216,6 +230,8 @@ export default function App() {
             setBoss(msg.payload);
             setBossLog([]);
             setReward(null);
+            setBossSpawnAlert(msg.payload);
+            setTimeout(() => setBossSpawnAlert(null), 5000);
             break;
           case "boss_status":
             setBoss(msg.payload);
@@ -251,7 +267,7 @@ export default function App() {
     ws.onclose = () => {
       wsRef.current = null;
     };
-  }, [heroi]);
+  }, [heroi, adicionarLog]);
 
   const atacarBoss = async () => {
     if (!wsRef.current || ataqueCooldown) return;
@@ -269,16 +285,16 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (heroi && abaAtiva === "boss") {
+    if (heroi) {
       conectarBossWS();
     }
     return () => {
-      if (wsRef.current && abaAtiva !== "boss") {
+      if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, [heroi, abaAtiva, conectarBossWS]);
+  }, [heroi, conectarBossWS]);
 
   if (erroAlocacao) {
     return (
@@ -317,6 +333,22 @@ export default function App() {
           }}
         >
           {toast.msg}
+        </div>
+      )}
+
+      {/* BOSS SPAWN ALERT */}
+      {bossSpawnAlert && (
+        <div style={styles.bossAlert}>
+          <div style={{ fontSize: 40 }}>🐉</div>
+          <div style={{ fontSize: 20, fontWeight: 700, margin: "8px 0 4px" }}>
+            {bossSpawnAlert.name} apareceu!
+          </div>
+          <div style={{ fontSize: 13, color: "#94a3b8" }}>
+            Vá até a aba 🔥 Chefe para enfrentá-lo!
+          </div>
+          <div style={{ fontSize: 12, color: "#555", marginTop: 8 }}>
+            HP: {bossSpawnAlert.hp} • ⏱ {bossSpawnAlert.timer}s
+          </div>
         </div>
       )}
 
@@ -1145,5 +1177,19 @@ const styles = {
     padding: 24,
     display: "inline-block",
     textAlign: "center",
+  },
+  bossAlert: {
+    position: "fixed",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    zIndex: 1000,
+    background: "#1a1830",
+    border: "2px solid #f87171",
+    borderRadius: 16,
+    padding: "32px 48px",
+    textAlign: "center",
+    boxShadow: "0 0 60px rgba(248,113,113,0.3)",
+    animation: "none",
   },
 };

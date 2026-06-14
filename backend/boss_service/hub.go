@@ -55,11 +55,13 @@ func (h *Hub) Run() {
 				},
 			})
 
-			status := h.boss.GetStatus()
-			client.sendJSON(ServerMessage{
-				Type:    "boss_status",
-				Payload: status,
-			})
+			if h.boss.IsActive() {
+				status := h.boss.GetStatus()
+				client.sendJSON(ServerMessage{
+					Type:    "boss_spawn",
+					Payload: status,
+				})
+			}
 
 			h.Broadcast(ServerMessage{
 				Type: "hero_joined",

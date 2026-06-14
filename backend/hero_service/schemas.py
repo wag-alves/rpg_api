@@ -45,6 +45,7 @@ class RespostaHeroi(BaseModel):
     xp: int
     xp_next: int
     gold: int
+    estatisticas: dict
     active_quests: list[str]
     completed_quests: list[str]
     links: dict

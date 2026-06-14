@@ -123,6 +123,21 @@ func (b *Boss) RunTimer() {
 			b.hub.Broadcast(ServerMessage{Type: "boss_escaped"})
 			return
 		}
+		remaining := b.Timer - elapsed
+		hp := b.HP
+		maxHp := b.MaxHP
+		name := b.Name
 		b.mu.Unlock()
+
+		b.hub.Broadcast(ServerMessage{
+			Type: "boss_status",
+			Payload: BossStatus{
+				Name:   name,
+				HP:     hp,
+				MaxHP:  maxHp,
+				Timer:  int(remaining.Seconds()),
+				Active: true,
+			},
+		})
 	}
 }
