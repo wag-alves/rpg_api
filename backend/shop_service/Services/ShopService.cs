@@ -29,8 +29,6 @@ public class ShopService : IShopService
 
         var itemDesejado = _db.ItensDaLoja[request.ItemId];
 
-        // Note: wallet / hero balance is the responsibility of Hero Service.
-        // The Gateway should verify and debit the hero's gold. Shop only validates item existence and quantity.
         return new BuyItemResponse
         {
             Success = true,

@@ -73,8 +73,19 @@ export default function App() {
       const res = await fetch(url, opts);
       const json = await res.json();
       adicionarLog(method, path, res.status, json);
-      if (!res.ok) throw new Error(json.detail || "Erro na requisição");
-      return json.data;
+      
+      if (!res.ok) {
+        // Em caso de erro, tenta extrair mensagem de diferentes locais
+        const mensagem = 
+          json?.data?.message || 
+          json?.message || 
+          json?.detail || 
+          "Erro na requisição";
+        throw new Error(mensagem);
+      }
+      
+      // Retorna os dados (pode estar dentro de .data ou ser direto)
+      return json?.data || json;
     },
     [adicionarLog],
   );

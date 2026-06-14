@@ -25,7 +25,6 @@ DC_NS = "http://schemas.datacontract.org/2004/07/shop_service.DTOs"
 
 
 def envelope_hateoas(data: dict, path: str) -> dict:
-    """Wrap response with gateway-level HATEOAS links."""
     return {
         "data": data,
         "_gateway": {
@@ -219,23 +218,100 @@ async def comprar_item(request: Request):
     hero_id = body.get("hero_id")
     item_id = body.get("item_id")
     quantidade = body.get("quantidade", 1)
-    # Try to resolve item price before attempting purchase so we can update hero gold
-    preco_total = None
+    
+    # Valida quantidade
+    if quantidade <= 0:
+        return JSONResponse(status_code=400, content=envelope_hateoas({
+            "success": False,
+            "status_code": "QuantidadeInvalida",
+            "message": "Quantidade deve ser maior que 0.",
+        }, "/api/shop/buy"))
+    
+    # Obtém o preço do item
     try:
         root_items = await _soap_request(
             "ObterItens",
             f'<ObterItens xmlns="{TEMP_NS}" />',
         )
         items_result = await _extrair_resultado_soap(root_items, "ObterItens")
-        preco = 0
+        preco = None
         for item_elem in items_result.findall(f"{{{DC_NS}}}ShopItem"):
             if int(item_elem.findtext(f"{{{DC_NS}}}Id", "0")) == int(item_id):
                 preco = int(item_elem.findtext(f"{{{DC_NS}}}Preco", "0"))
                 break
-        preco_total = preco * (quantidade if quantidade > 0 else 1)
-    except Exception:
-        preco_total = None
+        
+        if preco is None:
+            return JSONResponse(status_code=404, content=envelope_hateoas({
+                "success": False,
+                "status_code": "ItemNaoEncontrado",
+                "message": f"Item {item_id} não encontrado na loja.",
+            }, "/api/shop/buy"))
+        
+        preco_total = preco * quantidade
+    except Exception as e:
+        return JSONResponse(status_code=502, content=envelope_hateoas({
+            "success": False,
+            "status_code": "ErroAoFetchItens",
+            "message": f"Erro ao buscar itens da loja.",
+        }, "/api/shop/buy"))
 
+    # Validação de saldo ANTES de enviar para o shop_service
+    try:
+        async with httpx.AsyncClient() as client:
+            hero_resp = await client.get(f"{SERVICO_HEROI}/heroes/{hero_id}", timeout=5.0)
+            if hero_resp.status_code >= 400:
+                return JSONResponse(status_code=502, content=envelope_hateoas({
+                    "success": False,
+                    "status_code": "ErroAoFetchHeroi",
+                    "message": "Falha ao buscar informações do herói.",
+                }, "/api/shop/buy"))
+            
+            hero_json = hero_resp.json()
+            
+            # Tenta extrair ouro em várias formas possíveis
+            hero_gold = None
+            if isinstance(hero_json, dict):
+                # Caso 1: direto no hero_json (hero_service retorna direto)
+                if "gold" in hero_json:
+                    hero_gold = hero_json.get("gold")
+                # Caso 2: dentro de data (se passar pelo gateway)
+                elif "data" in hero_json and isinstance(hero_json["data"], dict):
+                    hero_gold = hero_json["data"].get("gold")
+                # Caso 3: nome alternativo
+                elif "ouro" in hero_json:
+                    hero_gold = hero_json.get("ouro")
+            
+            # Converte para int
+            try:
+                hero_gold = int(hero_gold) if hero_gold is not None else None
+            except (ValueError, TypeError):
+                hero_gold = None
+            
+            if hero_gold is None:
+                return JSONResponse(status_code=502, content=envelope_hateoas({
+                    "success": False,
+                    "status_code": "ErroAoFetchOuro",
+                    "message": f"Falha ao ler saldo do herói. Resposta: {hero_json}",
+                }, "/api/shop/buy"))
+
+            # Validação crítica: saldo insuficiente
+            if hero_gold < preco_total:
+                return JSONResponse(status_code=402, content=envelope_hateoas({
+                    "success": False,
+                    "status_code": "SaldoInsuficiente",
+                    "message": f"Saldo insuficiente: precisa de {preco_total}, tem {hero_gold}.",
+                    "hero_id": hero_id,
+                    "preco_total": preco_total,
+                    "hero_gold": hero_gold,
+                }, "/api/shop/buy"))
+    except Exception as e:
+        return JSONResponse(status_code=502, content=envelope_hateoas({
+            "success": False,
+            "status_code": "ErroValidacao",
+            "message": f"Erro durante validação de saldo: {str(e)}",
+        }, "/api/shop/buy"))
+
+    # Envia requisição SOAP para o shop_service
     body_xml = (
         f'<ComprarItem xmlns="{TEMP_NS}">'
         f'<request xmlns:d4p1="{DC_NS}">'
@@ -247,38 +323,6 @@ async def comprar_item(request: Request):
     )
 
     try:
-        # Ensure hero has enough gold before calling shop service
-        if preco_total is not None:
-            try:
-                async with httpx.AsyncClient() as client:
-                    hero_resp = await client.get(f"{SERVICO_HEROI}/heroes/{hero_id}", timeout=5.0)
-                    if hero_resp.status_code >= 400:
-                        raise HTTPException(status_code=502, detail="Failed to fetch hero info")
-                    hero_json = hero_resp.json()
-                    # hero service responses are plain JSON; when routed via gateway they wrap, but here we call service directly
-                    hero_gold = hero_json.get("gold") or hero_json.get("ouro") or hero_json.get("data", {}).get("gold")
-                    if hero_gold is None:
-                        # try nested structure
-                        hero_gold = hero_json.get("data", {}).get("gold")
-                    try:
-                        hero_gold = int(hero_gold)
-                    except Exception:
-                        hero_gold = None
-
-                    if hero_gold is not None and preco_total is not None and hero_gold < preco_total:
-                        return JSONResponse(status_code=400, content=envelope_hateoas({
-                            "success": False,
-                            "status_code": "SaldoInsuficiente",
-                            "message": f"Saldo insuficiente: precisa de {preco_total}, tem {hero_gold}.",
-                            "hero_id": hero_id,
-                            "preco_total": preco_total,
-                        }, "/api/shop/buy"))
-            except HTTPException:
-                raise
-            except Exception:
-                # If we couldn't verify hero balance, proceed and let downstream handle consistency
-                pass
-
         root = await _soap_request("ComprarItem", body_xml)
         result = await _extrair_resultado_soap(root, "ComprarItem")
 
@@ -325,6 +369,7 @@ async def comprar_item(request: Request):
         raise HTTPException(
             status_code=503, detail=f"Shop service error: {e}"
         )
+
 
 
 # ── Root ─────────────────────────────────────────────────────
