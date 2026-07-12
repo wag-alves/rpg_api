@@ -1,8 +1,14 @@
+import sys
+from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).parent.parent))
 
 from data import quests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from messaging import RabbitMQConnection, publish_event
 from schemas import (
     SolicitacaoAceitarMissao,
     RespostaAceitarMissao,
@@ -11,7 +17,18 @@ from schemas import (
     RespostaListaMissoes,
 )
 
-app = FastAPI(title="Quest Service", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("[Quest] Conectando ao RabbitMQ...")
+    await RabbitMQConnection.get_connection()
+    print("[Quest] Conectado ao RabbitMQ")
+    yield
+    print("[Quest] Fechando conexão RabbitMQ...")
+    await RabbitMQConnection.close()
+
+
+app = FastAPI(title="Quest Service", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,7 +88,7 @@ def obter_missao(quest_id: str):
 
 
 @app.post("/quests/{quest_id}/accept", response_model=RespostaAceitarMissao)
-def aceitar_missao(quest_id: str, body: SolicitacaoAceitarMissao):
+async def aceitar_missao(quest_id: str, body: SolicitacaoAceitarMissao):
     missao = quests.get(quest_id)
     if not missao:
         raise HTTPException(status_code=404, detail="Quest not found")
@@ -83,6 +100,13 @@ def aceitar_missao(quest_id: str, body: SolicitacaoAceitarMissao):
     missao["status"] = "in_progress"
     missao["id_heroi"] = body.id_heroi
     missao["aceito_em"] = datetime.now().isoformat()
+
+    await publish_event("quest.accepted", {
+        "quest_id": quest_id,
+        "hero_id": body.id_heroi,
+        "title": missao["titulo"],
+    })
+    print(f"[Quest] Evento publicado: quest.accepted (herói {body.id_heroi})")
 
     return RespostaAceitarMissao(
         id_missao=quest_id,
@@ -98,7 +122,7 @@ def aceitar_missao(quest_id: str, body: SolicitacaoAceitarMissao):
 
 
 @app.post("/quests/{quest_id}/complete", response_model=RespostaConcluirMissao)
-def concluir_missao(quest_id: str):
+async def concluir_missao(quest_id: str):
     missao = quests.get(quest_id)
     if not missao:
         raise HTTPException(status_code=404, detail="Quest not found")
@@ -107,6 +131,16 @@ def concluir_missao(quest_id: str):
 
     missao["status"] = "completed"
     missao["concluido_em"] = datetime.now().isoformat()
+
+    await publish_event("quest.completed", {
+        "quest_id": quest_id,
+        "hero_id": missao["id_heroi"],
+        "xp": missao["recompensa_xp"],
+        "gold": missao["recompensa_ouro"],
+        "title": missao["titulo"],
+    })
+    print(f"[Quest] Evento publicado: quest.completed (herói {missao['id_heroi']}, "
+          f"XP={missao['recompensa_xp']}, Gold={missao['recompensa_ouro']})")
 
     return RespostaConcluirMissao(
         id_missao=quest_id,

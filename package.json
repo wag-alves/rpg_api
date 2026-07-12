@@ -4,7 +4,9 @@
   "description": "Sistema de mural de missões estilo RPG demonstrando arquitetura de microserviços com FastAPI, API Gateway e HATEOAS.",
   "main": "index.js",
   "scripts": {
-    "start": "concurrently -n \"SHOP,HERO,QUEST,GATEWAY,BOSS,FRONT\" -c \"magenta,red,green,blue,cyan,yellow\" \"cd backend/shop_service && dotnet run\" \"cd backend/hero_service && uvicorn main:app --port 8001 --reload\" \"cd backend/quest_service && uvicorn main:app --port 8002 --reload\" \"cd backend/gateway && uvicorn main:app --port 8000 --reload\" \"cd backend/boss_service && go run .\" \"cd frontend && npm run dev\"",
+    "start": "concurrently -n \"SHOP,HERO,QUEST,GATEWAY,BOSS,FRONT,REWARD,LOG\" -c \"magenta,red,green,blue,cyan,yellow,white,brightBlue\" \"cd backend/shop_service && dotnet run\" \"cd backend/hero_service && uvicorn main:app --port 8001 --reload\" \"cd backend/quest_service && uvicorn main:app --port 8002 --reload\" \"cd backend/gateway && uvicorn main:app --port 8000 --reload\" \"cd backend/boss_service && go run .\" \"cd frontend && npm run dev\" \"npm run sub:reward\" \"npm run sub:log\"",
+    "sub:reward": "cd backend && python subscribers/reward_subscriber.py",
+    "sub:log": "cd backend && python subscribers/log_subscriber.py",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
