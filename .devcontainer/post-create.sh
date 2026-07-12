@@ -24,8 +24,19 @@ echo "[gRPC] Generating stubs from inventory.proto..."
 cd backend/inventory_service
 python3 -m grpc_tools.protoc -I proto --python_out=. --grpc_python_out=. proto/inventory.proto
 cd ../..
+# RabbitMQ
+echo "[RabbitMQ] Iniciando servidor..."
+sudo rabbitmq-server -detached
+sleep 3
+sudo rabbitmq-plugins enable rabbitmq_management > /dev/null 2>&1
+echo "[RabbitMQ] Pronto! UI em http://localhost:15672 (guest/guest)"
+
+# Install aio-pika
+echo "[Python] Installing aio-pika..."
+python3 -m pip install --no-cache-dir --break-system-packages aio-pika
 
 echo ""
 echo "=== All dependencies installed! ==="
 echo ""
 echo "Run 'npm start' to launch all services."
+echo "RabbitMQ UI: http://localhost:15672 (guest/guest)"
