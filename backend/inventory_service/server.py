@@ -1,12 +1,3 @@
-"""
-Inventory Service - Servidor gRPC
------------------------------------
-Gerencia, em memória, os itens de inventário dos heróis do RPG API.
-
-Executar:
-    python server.py
-"""
-
 from concurrent import futures
 import uuid
 import logging

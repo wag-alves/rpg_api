@@ -1,12 +1,3 @@
-"""
-Inventory Service - Cliente gRPC
------------------------------------
-Cliente de linha de comando que consome o InventoryService remoto.
-
-Executar (com o servidor já rodando em outro terminal):
-    python client.py
-"""
-
 import grpc
 
 import inventory_pb2
