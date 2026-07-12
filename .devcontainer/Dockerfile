@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates gnupg lsb-release software-properties-common \
     libicu-dev libssl-dev \
     python3-pip python3.12-venv python3.12-dev \
+    rabbitmq-server \
     && rm -rf /var/lib/apt/lists/*
 
 # === Node.js 22 LTS ===

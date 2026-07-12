@@ -9,9 +9,21 @@ Frontend React (5173)
         ↓
 API Gateway (FastAPI) — porta 8000
 ├── /api/heroes/*  →  Hero Service (FastAPI) — porta 8001
-├── /api/quests/*  →  Quest Service (FastAPI) — porta 8002
+├── /api/quests/*  →  Quest Service (FastAPI) — porta 8002 ──→  RabbitMQ
 ├── /api/shop/*    →  Shop Service (.NET/SOAP) — porta 5114
 └── /ws/boss       →  Boss Service (Go/WebSocket) — porta 8080
+
+                                            ┌─────────────────────────┐
+                                            │       RabbitMQ          │
+                                            │  exchange: rpg.events   │
+                                            │  (topic)                │
+                                            │  portas: 5672 / 15672   │
+                                            └───────────┬─────────────┘
+                                                     ┌──┴──┐
+                                                     ▼     ▼
+                                               Reward    Log
+                                               Subscriber Subscriber
+                                               (XP+gold)  (logger)
 ```
 
 ### Serviços
@@ -20,9 +32,68 @@ API Gateway (FastAPI) — porta 8000
 |---------|-------|-------|-----------|
 | Gateway | FastAPI | 8000 | API Gateway com HATEOAS e proxy WebSocket |
 | Hero Service | FastAPI | 8001 | Heróis, stats, XP, gold, checkout de personagens |
-| Quest Service | FastAPI | 8002 | Mural de missões |
+| Quest Service | FastAPI | 8002 | Mural de missões (publica eventos no RabbitMQ) |
 | Shop Service | .NET 10 / SOAP | 5114 | Loja de itens |
 | Boss Service | Go / Gorilla WebSocket | 8080 | World Boss em tempo real |
+
+## Message-Oriented Middleware (MOM) — Pub/Sub com RabbitMQ
+
+Paradigma implementado: **Publicar-Assinar (Publish/Subscribe)** com RabbitMQ como broker de mensagens.
+
+### Motivação
+
+Uma mesma ação no jogo (ex: concluir uma missão) deve disparar reações em múltiplos subsistemas de forma **independente e simultânea**:
+o sistema de recompensas distribui XP e gold, enquanto o sistema de log registra o evento para auditoria.
+Com Pub/Sub, o publicador não conhece os assinantes — garantindo **desacoplamento** entre os componentes.
+
+### Eventos Publicados
+
+O **Quest Service** publica eventos no exchange `rpg.events` (topic) do RabbitMQ:
+
+| Evento | Routing Key | Payload | Quando ocorre |
+|--------|-------------|---------|---------------|
+| Missão aceita | `quest.accepted` | `{quest_id, hero_id, title}` | `POST /quests/{id}/accept` |
+| Missão concluída | `quest.completed` | `{quest_id, hero_id, xp, gold, title}` | `POST /quests/{id}/complete` |
+
+### Subscribers (Assinantes)
+
+| Subscriber | Routing Key | Responsabilidade |
+|------------|-------------|------------------|
+| **Reward** | `quest.completed` | Escuta conclusão de missões e chama o Hero Service para distribuir XP e gold automaticamente |
+| **Log** | `#` (todos) | Escuta **todos** os eventos e registra timestamp + payload no console |
+
+### Como Executar
+
+```bash
+# Devcontainer: RabbitMQ já é instalado e iniciado automaticamente
+# Apenas execute:
+npm start
+
+# Ou iniciar subscribers manualmente em terminais separados:
+cd backend && python3 subscribers/reward_subscriber.py
+cd backend && python3 subscribers/log_subscriber.py
+```
+
+Acesse a UI do RabbitMQ em **http://localhost:15672** (usuário: `guest`, senha: `guest`).
+
+### Demonstração
+
+```bash
+# 1. Aceitar missão
+curl -X POST http://localhost:8000/api/quests/q1/accept \
+  -H 'Content-Type: application/json' \
+  -d '{"id_heroi":"1"}'
+
+# 2. Concluir missão
+curl -X POST http://localhost:8000/api/quests/q1/complete
+```
+
+Nos terminais dos subscribers:
+```
+[LogSub]    EVENTO: quest.accepted | {"quest_id": "q1", "hero_id": "1", ...}
+[LogSub]    EVENTO: quest.completed | {"quest_id": "q1", "hero_id": "1", "xp": 300, "gold": 50, ...}
+[RewardSub] Evento: quest.completed | Heroi: 1 | XP: 300 | Gold: 50
+```
 
 ## Sistema de Checkout (4 Heróis)
 
@@ -67,12 +138,13 @@ Batalha global contra o **Dragão de Gelo de Vorheim** via WebSocket.
 **Opção 1 — Local:** instale os runtimes acima manualmente, depois:
 
 ```bash
+pip install aio-pika          # necessário para os subscribers
 pip install -r requirements.txt
 cd frontend && npm install
 npm install   # (concurrently na raiz)
 ```
 
-**Opção 2 — Docker/Devcontainer:** instale apenas o Docker e use o devcontainer incluso (ou GitHub Codespace). Todas as dependências são instaladas automaticamente.
+**Opção 2 — Devcontainer:** instale apenas o Docker e use o devcontainer incluso (ou GitHub Codespace). RabbitMQ e todas as dependências são instalados automaticamente.
 
 ## GitHub Codespace
 
@@ -89,22 +161,30 @@ Após o build, execute:
 npm start
 ```
 
-## Como rodar (local)
+## Como rodar
 
 ```bash
-# Desenvolvimento local (todos os serviços)
+# Todos os serviços + subscribers
 npm start
 
-# Ou individualmente:
-cd backend/gateway    && uvicorn main:app --port 8000 --reload
-cd backend/hero_service  && uvicorn main:app --port 8001 --reload
-cd backend/quest_service && uvicorn main:app --port 8002 --reload
-cd backend/shop_service  && dotnet run
-cd backend/boss_service  && go run .
-cd frontend           && npm run dev
+# ------------------------------
+# Ou individualmente (terminais separados):
+# ------------------------------
+
+cd backend/gateway        && uvicorn main:app --port 8000 --reload
+cd backend/hero_service   && uvicorn main:app --port 8001 --reload
+cd backend/quest_service  && uvicorn main:app --port 8002 --reload
+cd backend/shop_service   && dotnet run
+cd backend/boss_service   && go run .
+cd frontend               && npm run dev
+
+# Subscribers:
+cd backend && python3 subscribers/reward_subscriber.py
+cd backend && python3 subscribers/log_subscriber.py
 ```
 
 Acesse: **http://localhost:5173**
+RabbitMQ UI: **http://localhost:15672** (guest/guest)
 
 ## Endpoints
 
