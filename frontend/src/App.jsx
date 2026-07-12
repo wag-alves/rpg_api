@@ -46,6 +46,11 @@ export default function App() {
   const [quantidades, setQuantidades] = useState({});
   const [comprando, setComprando] = useState(null);
 
+  // Inventário (gRPC via gateway REST /api/inventory/*) — alimentado
+  // automaticamente pelas compras na loja, não editável livremente.
+  const [inventario, setInventario] = useState([]);
+  const [removendoItemId, setRemovendoItemId] = useState(null);
+
   const [boss, setBoss] = useState(null);
   const [bossLog, setBossLog] = useState([]);
   const [topDamage, setTopDamage] = useState([]);
@@ -121,6 +126,11 @@ export default function App() {
       try {
         const i = await buscarApi("GET", "/api/shop/items");
         setItensLoja(i.itens || []);
+      } catch (_) {}
+
+      try {
+        const inv = await buscarApi("GET", `/api/inventory/${id}`);
+        setInventario(inv.itens || []);
       } catch (_) {}
     } catch (e) {
       mostrarToast(e.message, "error");
@@ -202,12 +212,29 @@ export default function App() {
         item_id: itemId,
         quantidade: qtd,
       });
-      mostrarToast(res.message);
+      mostrarToast(
+        res.inventory_update?.id
+          ? `${res.message} 🎒 Foi para o seu inventário!`
+          : res.message,
+      );
       await carregarTudo();
     } catch (e) {
       mostrarToast(e.message, "error");
     } finally {
       setComprando(null);
+    }
+  };
+
+  const descartarItemInventario = async (itemId) => {
+    setRemovendoItemId(itemId);
+    try {
+      const res = await buscarApi("DELETE", `/api/inventory/item/${itemId}`);
+      mostrarToast(res.mensagem);
+      await carregarTudo();
+    } catch (e) {
+      mostrarToast(e.message, "error");
+    } finally {
+      setRemovendoItemId(null);
     }
   };
 
@@ -423,6 +450,12 @@ export default function App() {
               🏪 Loja
             </button>
             <button
+              style={abaAtiva === "inventario" ? styles.tabAtivo : styles.tab}
+              onClick={() => setAbaAtiva("inventario")}
+            >
+              🎒 Inventário
+            </button>
+            <button
               style={abaAtiva === "boss" ? styles.tabAtivo : styles.tab}
               onClick={() => setAbaAtiva("boss")}
             >
@@ -461,6 +494,31 @@ export default function App() {
                         setQuantidades((prev) => ({ ...prev, [id]: val }))
                       }
                       onComprar={comprarItemLoja}
+                    />
+                  ))
+                )}
+              </div>
+            </>
+          ) : abaAtiva === "inventario" ? (
+            <>
+              <h2 style={styles.sectionTitle}>🎒 Inventário</h2>
+              <p style={{ color: "#8b88a3", fontSize: 12.5, marginTop: -8, marginBottom: 16 }}>
+                Servido pelo <b>Inventory Service (gRPC)</b> — o gateway consulta o serviço remoto
+                via Protocol Buffers. Os itens chegam aqui sozinhos quando você compra algo na 🏪 Loja.
+              </p>
+
+              <div style={styles.questList}>
+                {inventario.length === 0 ? (
+                  <div style={styles.skeleton}>
+                    Inventário vazio. Compre algo na aba 🏪 Loja para ver aparecer aqui.
+                  </div>
+                ) : (
+                  inventario.map((item) => (
+                    <CartaoItemInventario
+                      key={item.id}
+                      item={item}
+                      removendo={removendoItemId === item.id}
+                      onRemover={descartarItemInventario}
                     />
                   ))
                 )}
@@ -724,6 +782,49 @@ function CartaoItemLoja({ item, quantidade, comprando, onQuantidadeChange, onCom
           disabled={carregando}
         >
           {carregando ? "⏳" : "🛒 Comprar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const COR_RARIDADE_INV = {
+  comum: "#94a3b8",
+  raro: "#60a5fa",
+  epico: "#a78bfa",
+  lendario: "#facc15",
+};
+
+const ICONE_TIPO_INV = {
+  arma: "⚔️",
+  armadura: "🛡️",
+  pocao: "🧪",
+  material: "🔹",
+};
+
+function CartaoItemInventario({ item, removendo, onRemover }) {
+  const corRaridade = COR_RARIDADE_INV[item.raridade] || "#aaa";
+  return (
+    <div style={styles.lojaCard}>
+      <div style={styles.lojaHeader}>
+        <span style={styles.lojaIcon}>{ICONE_TIPO_INV[item.tipo] || "🔹"}</span>
+        <div style={{ flex: 1 }}>
+          <div style={styles.questTitle}>{item.nome}</div>
+          <div style={{ fontSize: 11.5, color: "#8b88a3" }}>id: {item.id}</div>
+        </div>
+        <span style={{ ...styles.badge, color: corRaridade, borderColor: corRaridade }}>
+          {item.raridade}
+        </span>
+        <div style={styles.lojaPreco}>×{item.quantidade}</div>
+      </div>
+      <div style={styles.lojaFooter}>
+        <div style={{ fontSize: 12.5, color: "#8b88a3" }}>tipo: {item.tipo}</div>
+        <button
+          style={removendo ? styles.btnComprarDisabled : styles.btnRemoverItem}
+          onClick={() => onRemover(item.id)}
+          disabled={removendo}
+        >
+          {removendo ? "⏳" : "🗑️ Descartar"}
         </button>
       </div>
     </div>
@@ -1062,6 +1163,16 @@ const styles = {
     borderRadius: 6,
     padding: "6px 14px",
     cursor: "not-allowed",
+    fontSize: 13,
+    fontWeight: 600,
+  },
+  btnRemoverItem: {
+    background: "#3a1e1e",
+    border: "1px solid #f87171",
+    color: "#f87171",
+    borderRadius: 6,
+    padding: "6px 14px",
+    cursor: "pointer",
     fontSize: 13,
     fontWeight: 600,
   },

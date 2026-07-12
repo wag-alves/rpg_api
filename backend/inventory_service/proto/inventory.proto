@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package inventory;
+
+// Serviço de Inventário de Heróis
+
+service InventoryService {
+  // Cadastra um novo item no inventário de um herói
+  rpc AdicionarItem (AdicionarItemRequest) returns (Item);
+
+  // Lista todos os itens do inventário de um herói
+  rpc ListarInventario (ListarInventarioRequest) returns (InventarioResponse);
+
+  // Consulta um item específico pelo seu id
+  rpc ConsultarItem (ConsultarItemRequest) returns (Item);
+
+  // Remove um item do inventário
+  rpc RemoverItem (RemoverItemRequest) returns (RemoverItemResponse);
+}
+
+// Mensagem composta: representa um item do inventário (mais de um atributo)
+message Item {
+  string id = 1;
+  string nome = 2;
+  string tipo = 3;        // arma, armadura, pocao, material
+  string raridade = 4;    // comum, raro, epico, lendario
+  int32 quantidade = 5;
+  string heroi_id = 6;
+}
+
+message AdicionarItemRequest {
+  string nome = 1;
+  string tipo = 2;
+  string raridade = 3;
+  int32 quantidade = 4;
+  string heroi_id = 5;
+}
+
+message ListarInventarioRequest {
+  string heroi_id = 1;
+}
+
+// Mensagem composta: agrega uma lista de itens e metadados do inventário
+message InventarioResponse {
+  string heroi_id = 1;
+  repeated Item itens = 2;
+  int32 total_itens = 3;
+}
+
+message ConsultarItemRequest {
+  string id = 1;
+}
+
+message RemoverItemRequest {
+  string id = 1;
+}
+
+message RemoverItemResponse {
+  bool sucesso = 1;
+  string mensagem = 2;
+}

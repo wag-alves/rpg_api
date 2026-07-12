@@ -1,7 +1,11 @@
+import os
+import sys
+import unicodedata
 import httpx
 import json
 import asyncio
 import websockets
+import grpc
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -11,6 +15,14 @@ from zeep import AsyncClient
 from zeep.transports import AsyncTransport
 from zeep.exceptions import Fault
 from zeep.helpers import serialize_object
+
+# ── Inventory Service (gRPC) — reaproveita os stubs gerados em
+#    backend/inventory_service/ a partir de inventory.proto ────
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "inventory_service")
+)
+import inventory_pb2
+import inventory_pb2_grpc
 
 app = FastAPI(title="Quest Board — API Gateway", version="1.0.0")
 
@@ -25,6 +37,7 @@ SERVICO_HEROI = "http://localhost:8001"
 SERVICO_MISSAO = "http://localhost:8002"
 SERVICO_LOJA = "http://localhost:5114"
 SERVICO_BOSS = "http://localhost:8080"
+SERVICO_INVENTARIO = "localhost:50051"  # gRPC, sem esquema (grpc.aio usa host:porta)
 URL_GATEWAY = "http://localhost:8000"
 
 
@@ -39,6 +52,58 @@ def get_soap_client() -> AsyncClient:
         wsdl_url = f"{SERVICO_LOJA}/Service.asmx?WSDL"
         soap_client_instance = AsyncClient(wsdl_url, transport=transport)
     return soap_client_instance
+# ─────────────────────────────────────────────────────────────
+
+
+# ── Configuração gRPC (Lazy Load) — Inventory Service ─────────
+inventory_channel = None
+inventory_stub = None
+
+def get_inventory_stub() -> "inventory_pb2_grpc.InventoryServiceStub":
+    global inventory_channel, inventory_stub
+    if inventory_stub is None:
+        # Canal gRPC único e assíncrono, reaproveitado entre requisições
+        inventory_channel = grpc.aio.insecure_channel(SERVICO_INVENTARIO)
+        inventory_stub = inventory_pb2_grpc.InventoryServiceStub(inventory_channel)
+    return inventory_stub
+
+
+def item_para_dict(item: "inventory_pb2.Item") -> dict:
+    return {
+        "id": item.id,
+        "nome": item.nome,
+        "tipo": item.tipo,
+        "raridade": item.raridade,
+        "quantidade": item.quantidade,
+        "heroi_id": item.heroi_id,
+    }
+
+
+# Os itens da loja (SOAP) não têm campo "tipo" — inferimos a partir do id
+# fixo do seed e, como fallback, de palavras-chave no nome do item.
+TIPO_POR_ITEM_ID_LOJA = {1: "arma", 2: "pocao", 3: "armadura"}
+
+def tipo_por_item_loja(item_id, nome: str) -> str:
+    if item_id in TIPO_POR_ITEM_ID_LOJA:
+        return TIPO_POR_ITEM_ID_LOJA[item_id]
+    nome_lower = (nome or "").lower()
+    if any(p in nome_lower for p in ("espada", "arco", "machado", "adaga", "cajado")):
+        return "arma"
+    if any(p in nome_lower for p in ("escudo", "armadura", "elmo", "peitoral")):
+        return "armadura"
+    if any(p in nome_lower for p in ("poção", "pocao", "elixir")):
+        return "pocao"
+    return "material"
+
+
+RARIDADES_VALIDAS = {"comum", "raro", "epico", "lendario"}
+
+def normalizar_raridade(raridade: str) -> str:
+    if not raridade:
+        return "comum"
+    sem_acento = unicodedata.normalize("NFKD", raridade).encode("ascii", "ignore").decode()
+    texto = sem_acento.lower().strip()
+    return texto if texto in RARIDADES_VALIDAS else "comum"
 # ─────────────────────────────────────────────────────────────
 
 
@@ -207,19 +272,20 @@ async def comprar_item(request: Request):
         resultado_soap = await client.service.ObterItens()
         itens_loja = serialize_object(resultado_soap) or []
         
-        preco = None
+        item_comprado = None
         for item in itens_loja:
             if item.get("Id") == item_id:
-                preco = item.get("Preco", 0)
+                item_comprado = item
                 break
-                
-        if preco is None:
+
+        if item_comprado is None:
             return JSONResponse(status_code=404, content=envelope_hateoas({
                 "success": False,
                 "status_code": "ItemNaoEncontrado",
                 "message": f"Item {item_id} não encontrado na loja.",
             }, "/api/shop/buy"))
-            
+
+        preco = item_comprado.get("Preco", 0)
         preco_total = preco * quantidade
 
     except Exception as e:
@@ -305,6 +371,24 @@ async def comprar_item(request: Request):
             except Exception:
                 hero_update_info = {"error": "failed to update hero gold"}
 
+        # Item comprado na loja (SOAP) é registrado no inventário do herói via gRPC.
+        # É assim — e só assim — que um item entra no inventário: comprando na loja.
+        inventory_update = None
+        if success:
+            try:
+                grpc_stub = get_inventory_stub()
+                add_req = inventory_pb2.AdicionarItemRequest(
+                    nome=item_comprado.get("Nome", f"Item {item_id}"),
+                    tipo=tipo_por_item_loja(item_id, item_comprado.get("Nome", "")),
+                    raridade=normalizar_raridade(item_comprado.get("Raridade", "")),
+                    quantidade=quantidade,
+                    heroi_id=str(hero_id),
+                )
+                novo_item = await grpc_stub.AdicionarItem(add_req, timeout=5.0)
+                inventory_update = {"id": novo_item.id, "nome": novo_item.nome}
+            except grpc.aio.AioRpcError as e:
+                inventory_update = {"error": f"falha ao registrar no inventário (gRPC): {e.details()}"}
+
         return JSONResponse(
             content=envelope_hateoas(
                 {
@@ -316,6 +400,7 @@ async def comprar_item(request: Request):
                     "quantidade": quantidade,
                     "preco_total": preco_total,
                     "hero_update": hero_update_info,
+                    "inventory_update": inventory_update,
                 },
                 "/api/shop/buy",
             ),
@@ -324,6 +409,89 @@ async def comprar_item(request: Request):
          raise HTTPException(status_code=502, detail=f"Erro interno da Loja (SOAP): {e.message}")
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Shop service error: {e}")
+
+
+# ── Inventory routes (REST → gRPC) ────────────────────────────
+# O gateway continua expondo REST para o frontend; internamente ele é um
+# CLIENTE gRPC do Inventory Service (backend/inventory_service), demonstrando
+# o padrão "gRPC internamente, REST na borda".
+
+@app.post("/api/inventory/items")
+async def adicionar_item_inventario(request: Request):
+    body = await request.json()
+    stub = get_inventory_stub()
+    try:
+        req = inventory_pb2.AdicionarItemRequest(
+            nome=body.get("nome", ""),
+            tipo=body.get("tipo", ""),
+            raridade=body.get("raridade", ""),
+            quantidade=int(body.get("quantidade", 1)),
+            heroi_id=body.get("heroi_id", ""),
+        )
+        item = await stub.AdicionarItem(req, timeout=5.0)
+        return JSONResponse(
+            content=envelope_hateoas(item_para_dict(item), "/api/inventory/items")
+        )
+    except grpc.aio.AioRpcError as e:
+        raise HTTPException(
+            status_code=503, detail=f"Inventory service (gRPC) indisponível: {e.details()}"
+        )
+
+
+@app.get("/api/inventory/{heroi_id}")
+async def listar_inventario(heroi_id: str):
+    stub = get_inventory_stub()
+    try:
+        resp = await stub.ListarInventario(
+            inventory_pb2.ListarInventarioRequest(heroi_id=heroi_id), timeout=5.0
+        )
+        data = {
+            "heroi_id": resp.heroi_id,
+            "total_itens": resp.total_itens,
+            "itens": [item_para_dict(i) for i in resp.itens],
+        }
+        return JSONResponse(
+            content=envelope_hateoas(data, f"/api/inventory/{heroi_id}")
+        )
+    except grpc.aio.AioRpcError as e:
+        raise HTTPException(
+            status_code=503, detail=f"Inventory service (gRPC) indisponível: {e.details()}"
+        )
+
+
+@app.get("/api/inventory/item/{item_id}")
+async def consultar_item_inventario(item_id: str):
+    stub = get_inventory_stub()
+    try:
+        item = await stub.ConsultarItem(
+            inventory_pb2.ConsultarItemRequest(id=item_id), timeout=5.0
+        )
+        return JSONResponse(
+            content=envelope_hateoas(item_para_dict(item), f"/api/inventory/item/{item_id}")
+        )
+    except grpc.aio.AioRpcError as e:
+        if e.code() == grpc.StatusCode.NOT_FOUND:
+            raise HTTPException(status_code=404, detail=e.details())
+        raise HTTPException(
+            status_code=503, detail=f"Inventory service (gRPC) indisponível: {e.details()}"
+        )
+
+
+@app.delete("/api/inventory/item/{item_id}")
+async def remover_item_inventario(item_id: str):
+    stub = get_inventory_stub()
+    try:
+        resp = await stub.RemoverItem(
+            inventory_pb2.RemoverItemRequest(id=item_id), timeout=5.0
+        )
+        data = {"sucesso": resp.sucesso, "mensagem": resp.mensagem}
+        return JSONResponse(
+            content=envelope_hateoas(data, f"/api/inventory/item/{item_id}")
+        )
+    except grpc.aio.AioRpcError as e:
+        raise HTTPException(
+            status_code=503, detail=f"Inventory service (gRPC) indisponível: {e.details()}"
+        )
 
 
 # ── Checkout / Checkin ──────────────────────────────────────
@@ -412,6 +580,10 @@ def raiz():
             "concluir_missao": f"{URL_GATEWAY}/api/quests/{{quest_id}}/complete",
             "itens_loja": f"{URL_GATEWAY}/api/shop/items",
             "comprar_item": f"{URL_GATEWAY}/api/shop/buy",
+            "inventario": f"{URL_GATEWAY}/api/inventory/{{heroi_id}}",
+            "adicionar_item_inventario": f"{URL_GATEWAY}/api/inventory/items",
+            "consultar_item_inventario": f"{URL_GATEWAY}/api/inventory/item/{{item_id}}",
+            "remover_item_inventario": f"{URL_GATEWAY}/api/inventory/item/{{item_id}}",
             "boss_spawn": f"{URL_GATEWAY}/api/boss/spawn",
             "boss_websocket": f"{URL_GATEWAY}/ws/boss",
         },

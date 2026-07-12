@@ -19,6 +19,12 @@ cd frontend && npm install && cd ..
 echo "[Go] Downloading modules..."
 cd backend/boss_service && go mod download && cd ../..
 
+# gRPC stubs (Inventory Service)
+echo "[gRPC] Generating stubs from inventory.proto..."
+cd backend/inventory_service
+python3 -m grpc_tools.protoc -I proto --python_out=. --grpc_python_out=. proto/inventory.proto
+cd ../..
+
 echo ""
 echo "=== All dependencies installed! ==="
 echo ""

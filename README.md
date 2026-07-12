@@ -8,10 +8,11 @@ Sistema de mural de missões estilo RPG demonstrando arquitetura de microserviç
 Frontend React (5173)
         ↓
 API Gateway (FastAPI) — porta 8000
-├── /api/heroes/*  →  Hero Service (FastAPI) — porta 8001
-├── /api/quests/*  →  Quest Service (FastAPI) — porta 8002
-├── /api/shop/*    →  Shop Service (.NET/SOAP) — porta 5114
-└── /ws/boss       →  Boss Service (Go/WebSocket) — porta 8080
+├── /api/heroes/*     →  Hero Service (FastAPI) — porta 8001
+├── /api/quests/*     →  Quest Service (FastAPI) — porta 8002
+├── /api/shop/*       →  Shop Service (.NET/SOAP) — porta 5114
+├── /api/inventory/*  →  Inventory Service (Python/gRPC) — porta 50051
+└── /ws/boss          →  Boss Service (Go/WebSocket) — porta 8080
 ```
 
 ### Serviços
@@ -22,7 +23,13 @@ API Gateway (FastAPI) — porta 8000
 | Hero Service | FastAPI | 8001 | Heróis, stats, XP, gold, checkout de personagens |
 | Quest Service | FastAPI | 8002 | Mural de missões |
 | Shop Service | .NET 10 / SOAP | 5114 | Loja de itens |
+| Inventory Service | Python / gRPC | 50051 | Inventário de itens dos heróis |
 | Boss Service | Go / Gorilla WebSocket | 8080 | World Boss em tempo real |
+
+O Inventory Service fala **gRPC**, não REST — o gateway atua como cliente gRPC dele e expõe o
+resultado como REST comum em `/api/inventory/*`, do mesmo jeito que já faz com o Shop Service (SOAP).
+Ele é o único serviço que precisa dos stubs gerados a partir de um `.proto` — veja
+`backend/inventory_service/README.md` para gerar/regenerar esses stubs manualmente, se precisar.
 
 ## Sistema de Checkout (4 Heróis)
 
@@ -124,6 +131,10 @@ Acesse: **http://localhost:5173**
 | POST | /api/quests/{id}/complete | Concluir missão |
 | GET | /api/shop/items | Listar itens da loja |
 | POST | /api/shop/buy | Comprar item |
+| POST | /api/inventory/items | Cadastrar item no inventário de um herói (→ gRPC `AdicionarItem`) |
+| GET | /api/inventory/{heroi_id} | Listar inventário de um herói (→ gRPC `ListarInventario`) |
+| GET | /api/inventory/item/{item_id} | Consultar um item (→ gRPC `ConsultarItem`) |
+| DELETE | /api/inventory/item/{item_id} | Remover um item (→ gRPC `RemoverItem`) |
 | POST | /api/boss/spawn | Invocar World Boss |
 | WS | /ws/boss | WebSocket da batalha |
 
